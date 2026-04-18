@@ -156,7 +156,7 @@ export interface ProcessoMonitorado {
   origem?: string;
   origem_id?: number;
   ultima_verificacao?: string;
-  total_movimentacoes?: number;
+  total_movimentacoes: number;
   movimentacoes?: any[];
   data_ultima_movimentacao?: string;
   criado_em?: string;
