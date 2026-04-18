@@ -135,6 +135,34 @@ export interface MonitorStats {
   ultima_busca?: string;
 }
 
+export interface ProcessoMonitoradoStats {
+  total: number;
+  ativos?: number;
+  com_movimentacoes?: number;
+  verificados_hoje?: number;
+  nunca_verificados?: number;
+  ultima_verificacao?: string;
+  por_origem?: Record<string, number>;
+}
+
+export interface ProcessoMonitorado {
+  id?: number;
+  numero_processo: string;
+  tribunal?: string;
+  classe_processual?: string;
+  orgao_julgador?: string;
+  assuntos?: any;
+  status?: string;
+  origem?: string;
+  origem_id?: number;
+  ultima_verificacao?: string;
+  total_movimentacoes?: number;
+  movimentacoes?: any[];
+  data_ultima_movimentacao?: string;
+  criado_em?: string;
+  atualizado_em?: string;
+}
+
 export interface AIConfig {
   function_key: string;
   provider: string;
@@ -395,6 +423,7 @@ class ApiClient {
     valor: string;
     nome_amigavel?: string;
     tribunal?: string;
+    fontes?: string | string[];
     intervalo_minutos?: number;
     horario_inicio?: string;
     horario_fim?: string;
@@ -441,6 +470,11 @@ class ApiClient {
       { params }
     );
     return Array.isArray(data) ? data : [];
+  }
+
+  async deletePublicacao(id: number): Promise<{ status: string }> {
+    const { data } = await this.client.delete<{ status: string }>(`/monitor/publicacoes/${id}`);
+    return data;
   }
 
   // Captacao Automatizada
@@ -528,6 +562,26 @@ class ApiClient {
   // Health
   async health(): Promise<HealthStatus> {
     const { data } = await this.client.get<HealthStatus>("/health");
+    return data;
+  }
+
+  async getProcessoMonitoradoStats(): Promise<ProcessoMonitoradoStats> {
+    const { data } = await this.client.get<ProcessoMonitoradoStats>("/processos/stats");
+    return data;
+  }
+
+  async listarProcessosMonitorados(params?: { limite?: number; offset?: number; status?: string }): Promise<ProcessoMonitorado[]> {
+    const { data } = await this.client.get<ProcessoMonitorado[]>("/processos/monitorados", { params });
+    return Array.isArray(data) ? data : [];
+  }
+
+  async registrarProcessoMonitorado(params: { numero_processo: string; tribunal?: string; origem?: string }): Promise<{ status: string; id?: number }> {
+    const { data } = await this.client.post<{ status: string; id?: number }>("/processos/registrar", params);
+    return data;
+  }
+
+  async deletarProcessoMonitorado(numero_processo: string): Promise<{ status: string }> {
+    const { data } = await this.client.delete<{ status: string }>(`/processos/monitorados/${encodeURIComponent(numero_processo)}`);
     return data;
   }
 
