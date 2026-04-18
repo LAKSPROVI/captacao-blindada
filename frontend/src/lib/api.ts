@@ -579,11 +579,8 @@ class ApiClient {
   }
 
   async listarProcessosMonitorados(params?: { limite?: number; offset?: number; status?: string }): Promise<{ processos: ProcessoMonitorado[]; total: number }> {
-    const { data } = await this.client.get<{ processos: ProcessoMonitorado[]; total: number } | ProcessoMonitorado[]>("/processos/monitorados", { params });
-    if (Array.isArray(data)) {
-      return { processos: data, total: data.length };
-    }
-    return { processos: (data as any).processos || [], total: (data as any).total || 0 };
+    const { data } = await this.client.get<{ status: string; processos: ProcessoMonitorado[]; total: number }>("/processos/listar", { params });
+    return { processos: data.processos || [], total: data.total || 0 };
   }
 
   async registrarProcessoMonitorado(params: { numero_processo: string; tribunal?: string; origem?: string }): Promise<{ status: string; id?: number }> {
@@ -592,7 +589,7 @@ class ApiClient {
   }
 
   async deletarProcessoMonitorado(numero_processo: string): Promise<{ status: string }> {
-    const { data } = await this.client.delete<{ status: string }>(`/processos/monitorados/${encodeURIComponent(numero_processo)}`);
+    const { data } = await this.client.delete<{ status: string }>(`/processos/${encodeURIComponent(numero_processo)}`);
     return data;
   }
 
