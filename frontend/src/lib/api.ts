@@ -570,9 +570,12 @@ class ApiClient {
     return data;
   }
 
-  async listarProcessosMonitorados(params?: { limite?: number; offset?: number; status?: string }): Promise<ProcessoMonitorado[]> {
-    const { data } = await this.client.get<ProcessoMonitorado[]>("/processos/monitorados", { params });
-    return Array.isArray(data) ? data : [];
+  async listarProcessosMonitorados(params?: { limite?: number; offset?: number; status?: string }): Promise<{ processos: ProcessoMonitorado[]; total: number }> {
+    const { data } = await this.client.get<{ processos: ProcessoMonitorado[]; total: number } | ProcessoMonitorado[]>("/processos/monitorados", { params });
+    if (Array.isArray(data)) {
+      return { processos: data, total: data.length };
+    }
+    return { processos: (data as any).processos || [], total: (data as any).total || 0 };
   }
 
   async registrarProcessoMonitorado(params: { numero_processo: string; tribunal?: string; origem?: string }): Promise<{ status: string; id?: number }> {
