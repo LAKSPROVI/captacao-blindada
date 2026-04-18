@@ -1,0 +1,69 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
+
+:root {
+  --background: #f8f9fa;
+  --foreground: #1a1a2e;
+  --card: #ffffff;
+  --card-foreground: #1a1a2e;
+  --primary: #1e3a5f;
+  --primary-foreground: #ffffff;
+  --secondary: #f0f2f5;
+  --secondary-foreground: #1a1a2e;
+  --muted: #f0f2f5;
+  --muted-foreground: #6b7280;
+  --accent: #c49b1a;
+  --accent-foreground: #ffffff;
+  --border: #e5e7eb;
+  --input: #e5e7eb;
+  --ring: #1e3a5f;
+}
+
+.dark {
+  --background: #0c1726;
+  --foreground: #f0f2f5;
+  --card: #122339;
+  --card-foreground: #f0f2f5;
+  --primary: #5387c3;
+  --primary-foreground: #ffffff;
+  --secondary: #182e4c;
+  --secondary-foreground: #f0f2f5;
+  --muted: #182e4c;
+  --muted-foreground: #9ca3af;
+  --accent: #c49b1a;
+  --accent-foreground: #ffffff;
+  --border: #1e3a5f;
+  --input: #1e3a5f;
+  --ring: #5387c3;
+}
+
+body {
+  background-color: var(--background);
+  color: var(--foreground);
+  font-family: 'Inter', system-ui, sans-serif;
+}
+
+* {
+  border-color: var(--border);
+}
+
+/* Scrollbar styling */
+::-webkit-scrollbar {
+  width: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: var(--muted);
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--muted-foreground);
+  border-radius: 3px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--primary);
+}

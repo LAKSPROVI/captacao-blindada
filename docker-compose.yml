@@ -1,0 +1,53 @@
+# =============================================================================
+# Captacao Peticao Blindada - Docker Compose
+# =============================================================================
+
+version: "3.8"
+
+services:
+  backend:
+    build:
+      context: .
+      dockerfile: Dockerfile.backend
+    container_name: captacao-backend
+    restart: unless-stopped
+    ports:
+      - "${CAPTACAO_PORT:-8000}:8000"
+    volumes:
+      - captacao-data:/app/data
+    env_file:
+      - .env
+    environment:
+      - CAPTACAO_DB_PATH=/app/data/captacao_blindada.db
+      - PYTHONPATH=/app
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/api/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+    networks:
+      - captacao-net
+
+  frontend:
+    build:
+      context: .
+      dockerfile: Dockerfile.frontend
+    container_name: captacao-frontend
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    environment:
+      - NEXT_PUBLIC_API_URL=http://backend:8000
+    depends_on:
+      backend:
+        condition: service_healthy
+    networks:
+      - captacao-net
+
+volumes:
+  captacao-data:
+    driver: local
+
+networks:
+  captacao-net:
+    driver: bridge
