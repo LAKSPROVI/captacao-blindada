@@ -7,7 +7,6 @@ import { StatsCard } from "@/components/StatsCard";
 import {
   Eye,
   EyeOff,
-  Plus,
   AlertCircle,
   CheckCircle2,
   Clock,
@@ -38,6 +37,7 @@ import {
   RefreshCw,
   Mail,
   MailOpen,
+  Zap,
 } from "lucide-react";
 
 const TIPO_OPTIONS = [
@@ -625,10 +625,6 @@ function MonitorRow({
   selected: boolean;
   onSelect: () => void;
 }) {
-  const intervaloLabel = monitor.intervalo_minutos >= 60
-    ? `${monitor.intervalo_minutos / 60}h`
-    : `${monitor.intervalo_minutos}min`;
-
   return (
     <tr
       onClick={onSelect}
@@ -666,15 +662,6 @@ function MonitorRow({
           {monitor.ativo ? "Ativo" : "Inativo"}
         </span>
       </td>
-      <td className="px-4 py-3 text-xs text-[var(--muted-foreground)]">
-        <div className="flex flex-col gap-0.5">
-          <span className="inline-flex items-center gap-1">
-            <Clock className="h-3 w-3 text-amber-500" />
-            A cada {intervaloLabel}
-          </span>
-          <span className="text-[10px]">{monitor.horario_inicio || "06:00"}–{monitor.horario_fim || "23:00"}</span>
-        </div>
-      </td>
       <td className="px-4 py-3 text-[var(--muted-foreground)] text-xs">
         {monitor.ultima_busca || "-"}
       </td>
@@ -690,16 +677,6 @@ export default function MonitorPage() {
   const [monitors, setMonitors] = useState<MonitorItem[]>([]);
   const [stats, setStats] = useState<MonitorStats>({});
   const [isLoading, setIsLoading] = useState(true);
-  const [showAddForm, setShowAddForm] = useState(false);
-  const [newTipo, setNewTipo] = useState("processo");
-  const [newValor, setNewValor] = useState("");
-  const [newTribunal, setNewTribunal] = useState("");
-  const [newNomeAmigavel, setNewNomeAmigavel] = useState("");
-  const [newIntervalo, setNewIntervalo] = useState(120);
-  const [newHorarioInicio, setNewHorarioInicio] = useState("06:00");
-  const [newHorarioFim, setNewHorarioFim] = useState("23:00");
-  const [newDiasSemana, setNewDiasSemana] = useState("1,2,3,4,5");
-  const [isAdding, setIsAdding] = useState(false);
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
 
@@ -1014,49 +991,6 @@ export default function MonitorPage() {
     setShowOnlyUnread(false);
   }, []);
 
-  const handleAddMonitor = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!newValor.trim()) {
-      setError("O campo Valor é obrigatório.");
-      return;
-    }
-    setError("");
-    setSuccess("");
-    setIsAdding(true);
-    try {
-      await api.addMonitor({
-        tipo: newTipo,
-        valor: newValor.trim(),
-        tribunal: newTribunal.trim() || undefined,
-        nome_amigavel: newNomeAmigavel.trim() || undefined,
-        fontes: getFontesForTipo(newTipo),
-        intervalo_minutos: newIntervalo,
-        horario_inicio: newHorarioInicio,
-        horario_fim: newHorarioFim,
-        dias_semana: newDiasSemana,
-      });
-      setSuccess("Monitoramento adicionado com sucesso!");
-      setNewTipo("processo");
-      setNewValor("");
-      setNewTribunal("");
-      setNewNomeAmigavel("");
-      setNewIntervalo(120);
-      setNewHorarioInicio("06:00");
-      setNewHorarioFim("23:00");
-      setNewDiasSemana("1,2,3,4,5");
-      setShowAddForm(false);
-      loadData();
-    } catch (err: unknown) {
-      const message =
-        err && typeof err === "object" && "response" in err
-          ? (err as { response?: { data?: { detail?: string } } }).response?.data?.detail
-          : undefined;
-      setError(message || "Erro ao adicionar monitoramento.");
-    } finally {
-      setIsAdding(false);
-    }
-  };
-
   if (isLoading) {
     return (
       <div className="flex h-full items-center justify-center">
@@ -1072,33 +1006,32 @@ export default function MonitorPage() {
       {/* Header */}
       <div className="flex items-start justify-between">
         <div>
-          <h1 className="text-2xl font-bold text-[var(--foreground)]">DJEN</h1>
+          <h1 className="text-2xl font-bold text-[var(--foreground)]">Monitor DJEN</h1>
           <p className="text-sm text-[var(--muted-foreground)]">
-            Diário da Justiça Eletrônica Nacional — Publicações monitoradas
+            Publicações de diários oficiais dos seus monitoramentos
           </p>
         </div>
-        <button
-          onClick={() => setShowAddForm(!showAddForm)}
-          className="flex items-center gap-2 rounded-lg bg-legal-600 px-4 py-2 text-sm font-medium text-white hover:bg-legal-700 transition-colors"
+        <a
+          href="/captacao"
+          className="flex items-center gap-2 rounded-lg border border-legal-600 px-4 py-2 text-sm font-medium text-legal-600 hover:bg-legal-600/10 transition-colors"
         >
-          <Plus className="h-4 w-4" />
-          Novo Monitoramento
-        </button>
+          <Zap className="h-4 w-4" />
+          Gerenciar Captações
+        </a>
       </div>
 
       {/* Info Banner */}
-      <div className="bg-blue-50/50 border border-blue-200 border-l-4 border-l-blue-500 p-4 mb-2 rounded-md shadow-sm">
+      <div className="bg-amber-50/50 border border-amber-200 border-l-4 border-l-amber-500 p-4 mb-2 rounded-md shadow-sm">
         <div className="flex">
           <div className="flex-shrink-0">
-            <Activity className="h-5 w-5 text-blue-500 mt-0.5" />
+            <Newspaper className="h-5 w-5 text-amber-500 mt-0.5" />
           </div>
           <div className="ml-3">
-            <h3 className="text-sm font-semibold text-blue-800">O que esta aba faz?</h3>
-            <p className="mt-1 text-sm text-blue-700 leading-relaxed">
-              O <strong>DJEN</strong> exibe exclusivamente as publicações reais extraídas de diários oficiais (Diário da Justiça Eletrônica Nacional) dos termos que você monitora. É aqui que você confere intimações, citações e publicações legais. Dados de movimentação processual estruturada (DataJud) foram movidos para a aba <strong>Processos</strong>.
-            </p>
-            <p className="mt-2 text-xs text-blue-600">
-              <strong>📊 Destino dos dados:</strong> As publicações encontradas pela <strong>Captação Automatizada</strong> alimentam esta tela. Novos resultados aparecem como "não lidos" aqui.
+            <h3 className="text-sm font-semibold text-amber-800">Feed de Publicações dos Diários Oficiais</h3>
+            <p className="mt-1 text-sm text-amber-700 leading-relaxed">
+              Esta aba exibe as publicações coletadas dos Diários Oficiais (DJEN) para os termos monitorados.
+              Para adicionar ou gerenciar captações automáticas, use a aba{" "}
+              <a href="/captacao" className="font-semibold underline hover:text-amber-900">Captação</a>.
             </p>
           </div>
         </div>
@@ -1142,207 +1075,11 @@ export default function MonitorPage() {
         </div>
       )}
 
-      {/* Add form */}
-      {showAddForm && (
-        <div className="rounded-lg border bg-[var(--card)] p-6 shadow-sm">
-          <h2 className="text-lg font-semibold text-[var(--card-foreground)] mb-4">
-            Adicionar Monitoramento DJEN
-          </h2>
-          <form onSubmit={handleAddMonitor} className="space-y-4">
-            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-              <div>
-                <label className="block text-sm font-medium text-[var(--card-foreground)] mb-1.5">
-                  Tipo de Monitoramento
-                </label>
-                <select
-                  value={newTipo}
-                  onChange={(e) => setNewTipo(e.target.value)}
-                  className="w-full rounded-lg border bg-[var(--background)] px-4 py-2.5 text-sm text-[var(--foreground)] focus:border-legal-600 focus:outline-none focus:ring-2 focus:ring-legal-600/20"
-                >
-                  {TIPO_OPTIONS.map((opt) => (
-                    <option key={opt.value} value={opt.value}>
-                      {opt.label}
-                    </option>
-                  ))}
-                </select>
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-[var(--card-foreground)] mb-1.5">
-                  Valor *
-                </label>
-                <input
-                  type="text"
-                  value={newValor}
-                  onChange={(e) => setNewValor(e.target.value)}
-                  placeholder={getPlaceholderForTipo(newTipo)}
-                  required
-                  className="w-full rounded-lg border bg-[var(--background)] px-4 py-2.5 text-sm text-[var(--foreground)] placeholder:text-[var(--muted-foreground)] focus:border-legal-600 focus:outline-none focus:ring-2 focus:ring-legal-600/20"
-                />
-              </div>
-            </div>
-            {/* Fontes automaticas por tipo */}
-            <div className="flex items-start gap-2 rounded-md border border-blue-500/30 bg-blue-500/10 p-3 text-xs text-blue-700">
-              <BookOpen className="h-3.5 w-3.5 shrink-0 mt-0.5" />
-              <span>
-                <span className="font-semibold">Fontes de busca automaticas: </span>
-                {getInfoForTipo(newTipo)}
-              </span>
-            </div>
-            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-              <div>
-                <label className="block text-sm font-medium text-[var(--card-foreground)] mb-1.5">
-                  Tribunal (opcional)
-                </label>
-                <input
-                  type="text"
-                  value={newTribunal}
-                  onChange={(e) => setNewTribunal(e.target.value)}
-                  placeholder="Ex: TJSP, TRF1"
-                  className="w-full rounded-lg border bg-[var(--background)] px-4 py-2.5 text-sm text-[var(--foreground)] placeholder:text-[var(--muted-foreground)] focus:border-legal-600 focus:outline-none focus:ring-2 focus:ring-legal-600/20"
-                />
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-[var(--card-foreground)] mb-1.5">
-                  Nome amigável (opcional)
-                </label>
-                <input
-                  type="text"
-                  value={newNomeAmigavel}
-                  onChange={(e) => setNewNomeAmigavel(e.target.value)}
-                  placeholder="Ex: Processo da empresa X"
-                  className="w-full rounded-lg border bg-[var(--background)] px-4 py-2.5 text-sm text-[var(--foreground)] placeholder:text-[var(--muted-foreground)] focus:border-legal-600 focus:outline-none focus:ring-2 focus:ring-legal-600/20"
-                />
-              </div>
-            </div>
-
-            {/* ⏰ Agendamento */}
-            <div className="rounded-lg border border-amber-500/20 bg-amber-500/5 p-4 space-y-3">
-              <h3 className="flex items-center gap-2 text-sm font-semibold text-[var(--card-foreground)]">
-                <Clock className="h-4 w-4 text-amber-600" />
-                Agendamento de Buscas
-              </h3>
-              <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
-                <div>
-                  <label className="block text-xs font-medium text-[var(--muted-foreground)] mb-1.5">
-                    Intervalo entre buscas
-                  </label>
-                  <select
-                    value={newIntervalo}
-                    onChange={(e) => setNewIntervalo(parseInt(e.target.value))}
-                    className="w-full rounded-lg border bg-[var(--background)] px-3 py-2 text-sm text-[var(--foreground)] focus:border-legal-600 focus:outline-none focus:ring-2 focus:ring-legal-600/20"
-                  >
-                    <option value={15}>15 min</option>
-                    <option value={30}>30 min</option>
-                    <option value={60}>1 hora</option>
-                    <option value={120}>2 horas</option>
-                    <option value={360}>6 horas</option>
-                    <option value={720}>12 horas</option>
-                    <option value={1440}>24 horas</option>
-                  </select>
-                </div>
-                <div>
-                  <label className="block text-xs font-medium text-[var(--muted-foreground)] mb-1.5">
-                    Horário início
-                  </label>
-                  <input
-                    type="time"
-                    value={newHorarioInicio}
-                    onChange={(e) => setNewHorarioInicio(e.target.value)}
-                    className="w-full rounded-lg border bg-[var(--background)] px-3 py-2 text-sm text-[var(--foreground)] focus:border-legal-600 focus:outline-none focus:ring-2 focus:ring-legal-600/20"
-                  />
-                </div>
-                <div>
-                  <label className="block text-xs font-medium text-[var(--muted-foreground)] mb-1.5">
-                    Horário fim
-                  </label>
-                  <input
-                    type="time"
-                    value={newHorarioFim}
-                    onChange={(e) => setNewHorarioFim(e.target.value)}
-                    className="w-full rounded-lg border bg-[var(--background)] px-3 py-2 text-sm text-[var(--foreground)] focus:border-legal-600 focus:outline-none focus:ring-2 focus:ring-legal-600/20"
-                  />
-                </div>
-              </div>
-              {/* Dias da semana */}
-              <div>
-                <label className="block text-xs font-medium text-[var(--muted-foreground)] mb-1.5">
-                  Dias da semana
-                </label>
-                <div className="flex gap-2">
-                  {[
-                    { day: "1", label: "Seg" },
-                    { day: "2", label: "Ter" },
-                    { day: "3", label: "Qua" },
-                    { day: "4", label: "Qui" },
-                    { day: "5", label: "Sex" },
-                    { day: "6", label: "Sáb" },
-                    { day: "7", label: "Dom" },
-                  ].map(({ day, label }) => {
-                    const selected = newDiasSemana.split(",").includes(day);
-                    return (
-                      <button
-                        key={day}
-                        type="button"
-                        onClick={() => {
-                          const dias = newDiasSemana.split(",").filter((d) => d);
-                          if (selected) {
-                            setNewDiasSemana(dias.filter((d) => d !== day).join(","));
-                          } else {
-                            setNewDiasSemana([...dias, day].sort().join(","));
-                          }
-                        }}
-                        className={`rounded-md px-3 py-1.5 text-xs font-medium transition-colors ${
-                          selected
-                            ? "bg-legal-600 text-white"
-                            : "border bg-[var(--card)] text-[var(--muted-foreground)] hover:bg-[var(--secondary)]"
-                        }`}
-                      >
-                        {label}
-                      </button>
-                    );
-                  })}
-                </div>
-              </div>
-              {/* Resumo do agendamento */}
-              <div className="text-xs text-amber-700 bg-amber-500/10 rounded-md px-3 py-2">
-                ⏰ Busca a cada <strong>{newIntervalo >= 60 ? `${newIntervalo / 60}h` : `${newIntervalo}min`}</strong>,
-                entre <strong>{newHorarioInicio}</strong> e <strong>{newHorarioFim}</strong>,
-                {newDiasSemana === "1,2,3,4,5" ? " de segunda a sexta" :
-                 newDiasSemana === "1,2,3,4,5,6,7" ? " todos os dias" :
-                 ` nos dias ${newDiasSemana.split(",").map(d => ["","Seg","Ter","Qua","Qui","Sex","Sáb","Dom"][parseInt(d)] || d).join(", ")}`}
-              </div>
-            </div>
-
-            <div className="flex gap-3">
-              <button
-                type="submit"
-                disabled={isAdding}
-                className="flex items-center gap-2 rounded-lg bg-legal-600 px-6 py-2.5 text-sm font-medium text-white hover:bg-legal-700 disabled:opacity-50 transition-colors"
-              >
-                {isAdding ? (
-                  <div className="h-4 w-4 animate-spin rounded-full border-2 border-white border-t-transparent" />
-                ) : (
-                  <Plus className="h-4 w-4" />
-                )}
-                {isAdding ? "Adicionando..." : "Adicionar"}
-              </button>
-              <button
-                type="button"
-                onClick={() => setShowAddForm(false)}
-                className="rounded-lg border px-6 py-2.5 text-sm font-medium text-[var(--muted-foreground)] hover:bg-[var(--secondary)] transition-colors"
-              >
-                Cancelar
-              </button>
-            </div>
-          </form>
-        </div>
-      )}
-
       {/* Monitors list */}
       <div className="rounded-lg border bg-[var(--card)] shadow-sm">
         <div className="border-b p-4 flex items-center justify-between">
           <h2 className="text-lg font-semibold text-[var(--card-foreground)]">
-            Monitoramentos DJEN
+            Monitores Cadastrados
           </h2>
           {selectedMonitorId !== null && (
             <div className="flex items-center gap-2 rounded-full bg-legal-600/10 px-3 py-1 text-xs font-medium text-legal-600">
@@ -1362,7 +1099,6 @@ export default function MonitorPage() {
                   <th className="px-4 py-3 text-left font-medium text-[var(--muted-foreground)]">Valor / Nome</th>
                   <th className="px-4 py-3 text-left font-medium text-[var(--muted-foreground)]">Tribunal</th>
                   <th className="px-4 py-3 text-left font-medium text-[var(--muted-foreground)]">Status</th>
-                  <th className="px-4 py-3 text-left font-medium text-[var(--muted-foreground)]">Agendamento</th>
                   <th className="px-4 py-3 text-left font-medium text-[var(--muted-foreground)]">Última Busca</th>
                   <th className="px-4 py-3 text-left font-medium text-[var(--muted-foreground)]">Publicações</th>
                 </tr>
@@ -1382,8 +1118,8 @@ export default function MonitorPage() {
         ) : (
           <div className="p-8 text-center text-[var(--muted-foreground)]">
             <Eye className="mx-auto h-12 w-12 mb-4 opacity-30" />
-            <p>Nenhum monitoramento cadastrado ainda.</p>
-            <p className="text-xs mt-1">Clique em &quot;Novo Monitoramento&quot; para começar.</p>
+            <p>Nenhum monitor cadastrado ainda.</p>
+            <p className="text-xs mt-1">Clique em &quot;Novo Monitor&quot; para começar.</p>
           </div>
         )}
         {monitors.length > 0 && (
