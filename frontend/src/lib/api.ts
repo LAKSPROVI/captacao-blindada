@@ -46,6 +46,14 @@ export interface Movimentacao {
   tipo?: string;
 }
 
+export interface IndicadorRisco {
+  tipo: string;
+  nivel: string;
+  descricao: string;
+  detalhes?: string;
+  recomendacao?: string;
+}
+
 export interface RiscoAnalise {
   nivel: "baixo" | "medio" | "alto" | "critico";
   score?: number;
