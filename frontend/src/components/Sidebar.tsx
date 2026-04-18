@@ -17,6 +17,7 @@ import {
   ChevronRight,
   User,
   Zap,
+  Brain,
 } from "lucide-react";
 import { useState, useEffect } from "react";
 
@@ -26,6 +27,7 @@ const navItems = [
   { href: "/monitor", label: "DJEN", icon: Globe },
   { href: "/processo", label: "Processos", icon: FileText },
   { href: "/busca", label: "Pesquisa", icon: Search },
+  { href: "/configuracao-ia", label: "IA & Modelos", icon: Brain },
 ] as const;
 
 export function Sidebar() {

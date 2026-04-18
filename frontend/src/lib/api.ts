@@ -135,11 +135,24 @@ export interface MonitorStats {
   ultima_busca?: string;
 }
 
-export interface IndicadorRisco {
-  tipo: string;
-  nivel: string;
-  descricao: string;
-  detalhes?: string;
+export interface AIConfig {
+  function_key: string;
+  provider: string;
+  model_name: string;
+  api_key?: string;
+  base_url?: string;
+  enabled: boolean;
+  updated_at?: string;
+}
+
+export interface AIProvider {
+  id: string;
+  name: string;
+  models: string[];
+}
+
+export interface AIModelsResponse {
+  providers: AIProvider[];
 }
 
 interface ProcessoResumoResponseRaw {
@@ -515,6 +528,27 @@ class ApiClient {
   // Health
   async health(): Promise<HealthStatus> {
     const { data } = await this.client.get<HealthStatus>("/health");
+    return data;
+  }
+
+  // IA Config
+  async getAIConfigs(): Promise<AIConfig[]> {
+    const { data } = await this.client.get<AIConfig[]>("/ai/config");
+    return data;
+  }
+
+  async updateAIConfig(key: string, config: Partial<AIConfig>): Promise<{ status: string }> {
+    const { data } = await this.client.put<{ status: string }>(`/ai/config/${key}`, config);
+    return data;
+  }
+
+  async getAvailableAIModels(): Promise<AIProvider[]> {
+    const { data } = await this.client.get<AIModelsResponse>("/ai/models");
+    return data.providers;
+  }
+
+  async testAIConfig(config: Partial<AIConfig>): Promise<{ status: string; message: string; response?: string }> {
+    const { data } = await this.client.post("/ai/test", config);
     return data;
   }
 }

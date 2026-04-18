@@ -211,6 +211,28 @@ class Database:
             CREATE INDEX IF NOT EXISTS idx_proc_mon_numero ON processos_monitorados(numero_processo);
             CREATE INDEX IF NOT EXISTS idx_proc_mon_status ON processos_monitorados(status);
             CREATE INDEX IF NOT EXISTS idx_proc_mon_verificacao ON processos_monitorados(ultima_verificacao);
+
+            -- =========================================================
+            -- Configuracao de IA (v1.3)
+            -- =========================================================
+
+            CREATE TABLE IF NOT EXISTS ai_config (
+                function_key TEXT PRIMARY KEY,
+                provider TEXT NOT NULL,
+                model_name TEXT NOT NULL,
+                api_key TEXT,
+                base_url TEXT,
+                enabled INTEGER DEFAULT 1,
+                updated_at TEXT DEFAULT (datetime('now'))
+            );
+
+            -- Inserir defaults se nao existirem
+            INSERT OR IGNORE INTO ai_config (function_key, provider, model_name, enabled)
+            VALUES 
+                ('classificacao', 'openai', 'claude-sonnet-4-20250514', 1),
+                ('previsao', 'openai', 'claude-sonnet-4-20250514', 1),
+                ('resumo', 'openai', 'claude-sonnet-4-20250514', 1),
+                ('jurisprudencia', 'openai', 'claude-sonnet-4-20250514', 1);
         """)
         conn.commit()
 
@@ -885,3 +907,33 @@ class Database:
         )
         self.conn.commit()
         return cur.rowcount > 0
+
+    # === AI Config ===
+
+    def obter_ai_config(self, function_key: str) -> Optional[Dict]:
+        """Obtem configuracao de IA para uma funcao especifica."""
+        row = self.conn.execute("SELECT * FROM ai_config WHERE function_key=?", (function_key,)).fetchone()
+        return dict(row) if row else None
+
+    def listar_ai_configs(self) -> List[Dict]:
+        """Lista todas as configuracoes de IA."""
+        rows = self.conn.execute("SELECT * FROM ai_config").fetchall()
+        return [dict(r) for r in rows]
+
+    def salvar_ai_config(self, function_key: str, provider: str, model_name: str, 
+                         api_key: Optional[str] = None, base_url: Optional[str] = None, 
+                         enabled: bool = True) -> bool:
+        """Salva ou atualiza uma configuracao de IA."""
+        self.conn.execute("""
+            INSERT INTO ai_config (function_key, provider, model_name, api_key, base_url, enabled, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?, datetime('now'))
+            ON CONFLICT(function_key) DO UPDATE SET
+                provider=excluded.provider,
+                model_name=excluded.model_name,
+                api_key=COALESCE(excluded.api_key, ai_config.api_key),
+                base_url=COALESCE(excluded.base_url, ai_config.base_url),
+                enabled=excluded.enabled,
+                updated_at=datetime('now')
+        """, (function_key, provider, model_name, api_key, base_url, 1 if enabled else 0))
+        self.conn.commit()
+        return True

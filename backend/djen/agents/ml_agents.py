@@ -23,6 +23,7 @@ from djen.agents.canonical_model import (
     StatusProcesso,
 )
 from djen.agents.orchestrator import BaseAgent, register_agent
+from djen.api.database import Database
 from djen.agents.specialized import (
     AnalisadorJurisprudencia,
     ClassificadorCausa,
@@ -67,24 +68,46 @@ class LLMClient:
         user_prompt: str,
         model: Optional[str] = None,
         max_tokens: int = 2000,
+        function_key: Optional[str] = None,
     ) -> Optional[str]:
         """
         Envia mensagem para o LLM e retorna a resposta como texto.
-
-        Args:
-            system_prompt: Instrucao de sistema para o modelo.
-            user_prompt: Mensagem do usuario / contexto do caso.
-            model: Modelo a utilizar (default: claude-sonnet-4-20250514).
-            max_tokens: Maximo de tokens na resposta.
-
-        Returns:
-            Texto da resposta ou None em caso de falha.
+        Pode carregar configuracoes dinamicas do banco de dados se function_key for fornecido.
         """
-        if not self.api_key:
+        # Configuracoes padrao
+        current_api_key = self.api_key
+        current_base_url = self.base_url
+        current_model = model or self.DEFAULT_MODEL
+        current_enabled = True
+
+        # Tentar carregar configuracao customizada do banco
+        if function_key:
+            try:
+                db = Database()
+                config = db.obter_ai_config(function_key)
+                if config:
+                    current_enabled = bool(config.get("enabled", True))
+                    if not current_enabled:
+                        log.info("[%s] IA desativada via configuracao", function_key)
+                        return None
+                    
+                    if config.get("model_name"):
+                        current_model = config["model_name"]
+                    if config.get("api_key"):
+                        current_api_key = config["api_key"]
+                    if config.get("base_url"):
+                        current_base_url = config["base_url"]
+                    
+                    log.debug("[%s] Usando config: model=%s, provider=%s", 
+                              function_key, current_model, config.get("provider"))
+            except Exception as e:
+                log.warning("Erro ao carregar ai_config para %s: %s", function_key, e)
+
+        if not current_api_key or not current_enabled:
             return None
 
         payload = {
-            "model": model or self.DEFAULT_MODEL,
+            "model": current_model,
             "messages": [
                 {"role": "system", "content": system_prompt},
                 {"role": "user", "content": user_prompt},
@@ -94,13 +117,13 @@ class LLMClient:
         }
 
         headers = {
-            "Authorization": f"Bearer {self.api_key}",
+            "Authorization": f"Bearer {current_api_key}",
             "Content-Type": "application/json",
         }
 
         try:
             resp = requests.post(
-                self.base_url,
+                current_base_url,
                 json=payload,
                 headers=headers,
                 timeout=self.TIMEOUT,
@@ -282,6 +305,7 @@ class ClassificadorCausaML(BaseAgent):
             system_prompt=self.SYSTEM_PROMPT,
             user_prompt=f"Classifique o seguinte processo:\n\n{context}",
             max_tokens=500,
+            function_key="classificacao"
         )
 
         parsed = _parse_json_response(response)
@@ -376,6 +400,7 @@ class PrevisorResultadoML(BaseAgent):
             system_prompt=self.SYSTEM_PROMPT,
             user_prompt=f"Analise e preveja o resultado deste processo:\n\n{context}",
             max_tokens=1500,
+            function_key="previsao"
         )
 
         parsed = _parse_json_response(response)
@@ -491,6 +516,7 @@ class GeradorResumoML(BaseAgent):
             system_prompt=self.SYSTEM_PROMPT,
             user_prompt=f"Gere o resumo executivo para este processo:\n\n{context}",
             max_tokens=2000,
+            function_key="resumo"
         )
 
         parsed = _parse_json_response(response)
@@ -583,6 +609,7 @@ class AnalisadorJurisprudenciaML(BaseAgent):
             system_prompt=self.SYSTEM_PROMPT,
             user_prompt=f"Identifique jurisprudencia relevante para este processo:\n\n{context}",
             max_tokens=2000,
+            function_key="jurisprudencia"
         )
 
         parsed = _parse_json_response(response)

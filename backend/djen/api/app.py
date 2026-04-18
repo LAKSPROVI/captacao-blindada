@@ -1,4 +1,4 @@
-﻿#!/usr/bin/env python3
+#!/usr/bin/env python3
 """
 Captacao Peticao Blindada - API REST Principal.
 
@@ -243,6 +243,7 @@ from djen.api.routers.health import router as health_router
 from djen.api.routers.processo import router as processo_router
 from djen.api.routers.captacao import router as captacao_router
 from djen.api.routers.processos_monitor import router as processos_monitor_router
+from djen.api.routers.ai_config import router as ai_config_router
 
 # Auth router (public endpoints: login, etc.)
 app.include_router(auth_router)
@@ -255,6 +256,7 @@ app.include_router(health_router)
 app.include_router(processo_router)
 app.include_router(captacao_router)
 app.include_router(processos_monitor_router)
+app.include_router(ai_config_router)
 
 
 # =========================================================================
