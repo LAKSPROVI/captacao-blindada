@@ -585,6 +585,11 @@ class ApiClient {
     return data;
   }
 
+  async verificarProcessosAgora(): Promise<{ status: string; verificados?: number; atualizados?: number }> {
+    const { data } = await this.client.post<{ status: string; verificados?: number; atualizados?: number }>("/processos/verificar-agora");
+    return data;
+  }
+
   // IA Config
   async getAIConfigs(): Promise<AIConfig[]> {
     const { data } = await this.client.get<AIConfig[]>("/ai/config");
