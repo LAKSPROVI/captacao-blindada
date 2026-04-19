@@ -216,24 +216,9 @@ class APIInfoResponse(BaseModel):
     health_url: str = "/api/health"
 
 
-# =========================================================================
-# Captacao Automatizada - Enums
-# =========================================================================
-
-class TipoBusca(str, Enum):
-    processo = "processo"
-    oab = "oab"
-    nome_parte = "nome_parte"
-    nome_advogado = "nome_advogado"
-    classe = "classe"
-    assunto = "assunto"
-    tribunal_geral = "tribunal_geral"
-
-
-class PrioridadeCaptacao(str, Enum):
-    urgente = "urgente"
-    normal = "normal"
-    baixa = "baixa"
+class ModalidadeCaptacao(str, Enum):
+    recorrente = "recorrente"
+    faixa_fixa = "faixa_fixa"
 
 
 # =========================================================================
@@ -245,6 +230,7 @@ class CaptacaoCreateRequest(BaseModel):
     nome: str = Field(..., min_length=1, max_length=200, description="Nome identificador da captacao")
     descricao: Optional[str] = Field(None, description="Descricao/notas livres")
     tipo_busca: TipoBusca = Field(..., description="Tipo de busca a realizar")
+    modalidade: ModalidadeCaptacao = Field(ModalidadeCaptacao.recorrente, description="recorrente ou faixa_fixa")
 
     # Parametros de busca (conforme tipo_busca)
     numero_processo: Optional[str] = Field(None, description="Numero CNJ (tipo_busca=processo)")
@@ -263,8 +249,9 @@ class CaptacaoCreateRequest(BaseModel):
 
     # Fontes
     fontes: List[FonteBusca] = Field(
-        default=[FonteBusca.datajud, FonteBusca.djen_api],
-        description="Fontes a consultar",
+        ...,
+        min_length=1,
+        description="Pelo menos uma fonte deve ser selecionada",
     )
 
     # Scheduler
@@ -287,6 +274,7 @@ class CaptacaoUpdateRequest(BaseModel):
     nome: Optional[str] = Field(None, min_length=1, max_length=200)
     descricao: Optional[str] = None
     ativo: Optional[bool] = None
+    modalidade: Optional[ModalidadeCaptacao] = None
     numero_processo: Optional[str] = None
     numero_oab: Optional[str] = None
     uf_oab: Optional[str] = None

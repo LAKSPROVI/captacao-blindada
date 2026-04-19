@@ -49,10 +49,18 @@ class CaptacaoService:
             return DjenSource()
         return None
 
-    def _montar_parametros_datajud(self, cap: Dict) -> Optional[Dict]:
-        """Monta parametros de busca para DataJud conforme tipo_busca."""
-        tipo = cap["tipo_busca"]
-
+        data_inicio = cap.get("data_inicio")
+        data_fim = cap.get("data_fim")
+        modalidade = cap.get("modalidade", "recorrente")
+        
+        # Logica de modalidade
+        if modalidade == "recorrente":
+            if not data_fim:
+                data_fim = datetime.now().strftime("%Y-%m-%d")
+            if not data_inicio:
+                # Default 30 dias se nao especificado
+                data_inicio = (datetime.now() - timedelta(days=30)).strftime("%Y-%m-%d")
+        
         if tipo == "processo":
             numero = cap.get("numero_processo")
             if not numero:
@@ -64,20 +72,20 @@ class CaptacaoService:
                 if len(limpo) >= 18:
                     j = limpo[13]
                     tr = limpo[14:16]
-                    from djen.sources.datajud import TRIBUNAIS_DATAJUD
-                    # Tentar encontrar tribunal
-                    for sigla in TRIBUNAIS_DATAJUD:
-                        if sigla.startswith("tj") and j == "8":
-                            # Justica estadual - precisaria mapear UF->tribunal
-                            pass
                     # Fallback: buscar em tribunais prioritarios
-                    return {"numero_processo": numero, "tribunal": None, "tamanho": 5}
+                    return {
+                        "numero_processo": numero, 
+                        "tribunal": None, 
+                        "tamanho": 5, 
+                        "data_inicio": data_inicio, 
+                        "data_fim": data_fim
+                    }
             return {
                 "numero_processo": numero,
                 "tribunal": tribunal,
                 "tamanho": 10,
-                "data_inicio": cap.get("data_inicio"),
-                "data_fim": cap.get("data_fim"),
+                "data_inicio": data_inicio,
+                "data_fim": data_fim,
             }
 
         elif tipo == "classe":
@@ -87,8 +95,8 @@ class CaptacaoService:
             return {
                 "tribunal": tribunal,
                 "classe_codigo": cap.get("classe_codigo"),
-                "data_inicio": cap.get("data_inicio"),
-                "data_fim": cap.get("data_fim"),
+                "data_inicio": data_inicio,
+                "data_fim": data_fim,
                 "tamanho": 20,
             }
 
@@ -99,8 +107,8 @@ class CaptacaoService:
             return {
                 "tribunal": tribunal,
                 "assunto_codigo": cap.get("assunto_codigo"),
-                "data_inicio": cap.get("data_inicio"),
-                "data_fim": cap.get("data_fim"),
+                "data_inicio": data_inicio,
+                "data_fim": data_fim,
                 "tamanho": 20,
             }
 
@@ -110,8 +118,8 @@ class CaptacaoService:
                 return None
             return {
                 "tribunal": tribunal,
-                "data_inicio": cap.get("data_inicio"),
-                "data_fim": cap.get("data_fim"),
+                "data_inicio": data_inicio,
+                "data_fim": data_fim,
                 "tamanho": 20,
             }
 
@@ -122,10 +130,20 @@ class CaptacaoService:
         """Monta parametros de busca para DJEN conforme tipo_busca."""
         tipo = cap["tipo_busca"]
 
+        data_inicio = cap.get("data_inicio")
+        data_fim = cap.get("data_fim")
+        modalidade = cap.get("modalidade", "recorrente")
+        
+        if modalidade == "recorrente":
+            if not data_fim:
+                data_fim = datetime.now().strftime("%Y-%m-%d")
+            if not data_inicio:
+                data_inicio = (datetime.now() - timedelta(days=30)).strftime("%Y-%m-%d")
+
         base = {
             "tribunal": cap.get("tribunal"),
-            "data_inicio": cap.get("data_inicio"),
-            "data_fim": cap.get("data_fim"),
+            "data_inicio": data_inicio,
+            "data_fim": data_fim,
             "tipo_comunicacao": cap.get("tipo_comunicacao"),
             "orgao_id": cap.get("orgao_id"),
         }

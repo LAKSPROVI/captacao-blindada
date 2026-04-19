@@ -153,6 +153,7 @@ class Database:
                 notificar_whatsapp INTEGER DEFAULT 0,
                 notificar_email INTEGER DEFAULT 0,
                 prioridade TEXT DEFAULT 'normal',
+                modalidade TEXT DEFAULT 'recorrente',
 
                 -- Meta
                 criado_em TEXT DEFAULT (datetime('now')),
@@ -233,6 +234,30 @@ class Database:
                 ('previsao', 'openai', 'claude-sonnet-4-20250514', 1),
                 ('resumo', 'openai', 'claude-sonnet-4-20250514', 1),
                 ('jurisprudencia', 'openai', 'claude-sonnet-4-20250514', 1);
+
+            -- =========================================================
+            -- Configuracoes Globais (v1.4)
+            -- =========================================================
+
+            -- =========================================================
+            -- Historico de Verificacoes (v1.5)
+            -- =========================================================
+
+            CREATE TABLE IF NOT EXISTS processos_monitorados_historico (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                numero_processo TEXT NOT NULL,
+                data_verificacao TEXT DEFAULT (datetime('now')),
+                status TEXT, -- ok, erro, sem_mudancas
+                fonte TEXT, -- datajud, djen
+                detalhes TEXT, -- JSON com o que mudou ou mensagem de erro
+                total_movimentacoes INTEGER,
+                novas_movimentacoes INTEGER DEFAULT 0,
+                FOREIGN KEY (numero_processo) REFERENCES processos_monitorados(numero_processo)
+            );
+
+            CREATE INDEX IF NOT EXISTS idx_proc_hist_numero ON processos_monitorados_historico(numero_processo);
+            CREATE INDEX IF NOT EXISTS idx_proc_hist_data ON processos_monitorados_historico(data_verificacao);
+
         """)
         conn.commit()
 
@@ -480,6 +505,7 @@ class Database:
             "data_inicio", "data_fim", "fontes", "intervalo_minutos",
             "horario_inicio", "horario_fim", "dias_semana",
             "auto_enriquecer", "notificar_whatsapp", "notificar_email", "prioridade",
+            "modalidade",
         ]
         for key in allowed:
             val = kwargs.get(key)
@@ -530,6 +556,7 @@ class Database:
             "data_fim", "fontes", "intervalo_minutos", "horario_inicio",
             "horario_fim", "dias_semana", "proxima_execucao",
             "auto_enriquecer", "notificar_whatsapp", "notificar_email", "prioridade",
+            "modalidade",
         ]
         sets = []
         vals = []
@@ -899,6 +926,28 @@ class Database:
         stats["por_origem"] = {r["origem"]: r["c"] for r in rows}
         return stats
 
+    def registrar_historico_processo(self, numero_processo: str, status: str,
+                                    fonte: str, total_mov: int, novas: int,
+                                    detalhes: str = None) -> int:
+        """Registra uma entrada no historico de verificacoes do processo."""
+        cur = self.conn.execute("""
+            INSERT INTO processos_monitorados_historico
+            (numero_processo, status, fonte, total_movimentacoes, novas_movimentacoes, detalhes)
+            VALUES (?, ?, ?, ?, ?, ?)
+        """, (numero_processo, status, fonte, total_mov, novas, detalhes))
+        self.conn.commit()
+        return cur.lastrowid or 0
+
+    def listar_historico_processo(self, numero_processo: str, limite: int = 50) -> List[Dict]:
+        """Lista o historico de verificacoes de um processo especifico."""
+        rows = self.conn.execute("""
+            SELECT * FROM processos_monitorados_historico
+            WHERE numero_processo = ?
+            ORDER BY data_verificacao DESC
+            LIMIT ?
+        """, (numero_processo, limite)).fetchall()
+        return [dict(r) for r in rows]
+
     def deletar_processo_monitorado(self, numero_processo: str) -> bool:
         """Remove processo monitorado (soft delete - muda status para inativo)."""
         cur = self.conn.execute(
@@ -937,3 +986,41 @@ class Database:
         """, (function_key, provider, model_name, api_key, base_url, 1 if enabled else 0))
         self.conn.commit()
         return True
+
+    # =========================================================================
+    # System Settings
+    # =========================================================================
+
+    def get_setting(self, key: str, default: Any = None) -> Any:
+        """Busca uma configuracao no banco."""
+        try:
+            row = self.conn.execute(
+                "SELECT value FROM system_settings WHERE key = ?", (key,)
+            ).fetchone()
+            return row["value"] if row else default
+        except Exception as e:
+            log.error("Erro ao buscar setting %s: %s", key, e)
+            return default
+
+    def set_setting(self, key: str, value: Any):
+        """Salva ou atualiza uma configuracao."""
+        try:
+            self.conn.execute(
+                "INSERT INTO system_settings (key, value, updated_at) VALUES (?, ?, datetime('now')) "
+                "ON CONFLICT(key) DO UPDATE SET value=excluded.value, updated_at=excluded.updated_at",
+                (key, str(value))
+            )
+            self.conn.commit()
+        except Exception as e:
+            log.error("Erro ao salvar setting %s: %s", key, e)
+            self.conn.rollback()
+            raise e
+
+    def listar_settings(self) -> Dict[str, str]:
+        """Lista todas as configuracoes."""
+        try:
+            rows = self.conn.execute("SELECT key, value FROM system_settings").fetchall()
+            return {row["key"]: row["value"] for row in rows}
+        except Exception as e:
+            log.error("Erro ao listar settings: %s", e)
+            return {}

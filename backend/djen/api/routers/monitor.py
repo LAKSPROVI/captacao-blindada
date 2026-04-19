@@ -63,7 +63,7 @@ def publicacoes_recentes(
     fonte: Optional[str] = Query(None),
     tribunal: Optional[str] = Query(None),
     processo: Optional[str] = Query(None),
-    limite: int = Query(100000, ge=1),
+    limite: int = Query(1000000, ge=1, le=1000000),
 ):
     """Lista publicacoes recentes salvas no banco."""
     db = get_db()
@@ -86,7 +86,7 @@ def buscar_publicacoes_texto(
     termo: str = Query(..., min_length=1, description='Texto a buscar em todos os campos'),
     fonte: str = Query(None),
     tribunal: str = Query(None),
-    limite: int = Query(200, ge=1),
+    limite: int = Query(1000000, ge=1, le=1000000),
 ):
     """Busca full-text nas publicacoes salvas localmente. Pesquisa em processo, conteudo, partes, advogados, OABs, assuntos."""
     db = get_db()

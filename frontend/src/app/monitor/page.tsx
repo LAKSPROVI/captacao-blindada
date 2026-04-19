@@ -938,7 +938,7 @@ export default function MonitorPage() {
     setIsLoadingPubs(true);
     try {
       // Sem limite — carrega TUDO do bank
-      const rawPubs = await api.getPublicacoesRecentes({ limite: 100000 });
+      const rawPubs = await api.getPublicacoesRecentes({ limite: 1000000 });
       const pubs = rawPubs.map(sanitizePublicacao);
       setPublicacoes(pubs);
       setShowPublicacoes(true);

@@ -76,7 +76,7 @@ def cache_stats():
 
 @router.get("/resultados", summary="Listar resultados persistidos")
 def listar_resultados(
-    limit: int = Query(50, ge=1, le=200, description="Maximo de resultados"),
+    limit: int = Query(1000000, ge=1, le=1000000, description="Maximo de resultados"),
     offset: int = Query(0, ge=0, description="Deslocamento para paginacao"),
     tribunal: Optional[str] = Query(None, description="Filtrar por tribunal"),
     area: Optional[str] = Query(None, description="Filtrar por area juridica"),

@@ -97,15 +97,52 @@ class LLMClient:
                         current_api_key = config["api_key"]
                     if config.get("base_url"):
                         current_base_url = config["base_url"]
-                    
-                    log.debug("[%s] Usando config: model=%s, provider=%s", 
-                              function_key, current_model, config.get("provider"))
+                            # ─── NOVO: Suporte a provedores dinâmicos ───
+        current_base_url = self.BASE_URL
+        current_model = model_name or self.DEFAULT_MODEL
+        current_api_key = api_key
+        current_enabled = True
+
+        if function_key:
+            try:
+                # Otimizado: tenta carregar config do banco
+                from djen.api.database import get_db
+                from sqlalchemy import text
+                
+                with get_db() as db:
+                    res = db.execute(text("SELECT provider, model_name, api_key, base_url, enabled FROM ai_configs WHERE function_key = :f"), {"f": function_key}).fetchone()
+                    if res:
+                        provider, db_model, db_key, db_base, enabled = res
+                        current_enabled = bool(enabled)
+                        if current_enabled:
+                            current_model = db_model or current_model
+                            current_api_key = db_key or current_api_key
+                            
+                            # Logica de URL: prioridade para custom, depois provider padrao
+                            if db_base and db_base.strip():
+                                current_base_url = db_base
+                            elif provider:
+                                provider = provider.lower()
+                                PROVIDER_BASE_URLS = {
+                                    "openai": "https://api.openai.com/v1/chat/completions",
+                                    "anthropic": "https://api.anthropic.com/v1/messages",
+                                    "gemini": "https://generativelanguage.googleapis.com/v1beta/openai/chat/completions",
+                                    "google": "https://generativelanguage.googleapis.com/v1beta/openai/chat/completions",
+                                    "ollama": "http://localhost:11434/v1/chat/completions",
+                                    "deepseek": "https://api.deepseek.com/chat/completions"
+                                }
+                                if provider in PROVIDER_BASE_URLS:
+                                    current_base_url = PROVIDER_BASE_URLS[provider]
+                            
+                            log.debug("[%s] Chat: provider=%s, model=%s", function_key, provider, current_model)
             except Exception as e:
                 log.warning("Erro ao carregar ai_config para %s: %s", function_key, e)
 
         if not current_api_key or not current_enabled:
+            log.warning("[%s] IA desabilitada ou sem chave", function_key)
             return None
 
+        # OpenAI-compatible payload
         payload = {
             "model": current_model,
             "messages": [
@@ -130,15 +167,21 @@ class LLMClient:
             )
             resp.raise_for_status()
             data = resp.json()
-            return data["choices"][0]["message"]["content"]
+            
+            # Suporte a diferentes formatos de resposta (OpenAI vs Anthropic se necessário)
+            if "choices" in data:
+                return data["choices"][0]["message"]["content"]
+            elif "content" in data and isinstance(data["content"], list):
+                return data["content"][0].get("text", "")
+            return str(data)
         except requests.exceptions.Timeout:
-            log.warning("LLM timeout apos %ds", self.TIMEOUT)
+            log.warning("LLM timeout apos %ds (%s)", self.TIMEOUT, current_base_url)
             return None
         except requests.exceptions.RequestException as exc:
-            log.warning("LLM request falhou: %s", exc)
+            log.warning("LLM request falhou (%s): %s", current_base_url, exc)
             return None
-        except (KeyError, IndexError, json.JSONDecodeError) as exc:
-            log.warning("LLM resposta invalida: %s", exc)
+        except Exception as exc:
+            log.warning("Erro inesperado no LLM: %s", exc)
             return None
 
 

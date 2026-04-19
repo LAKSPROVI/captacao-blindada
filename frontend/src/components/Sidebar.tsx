@@ -26,7 +26,7 @@ const navItems = [
   { href: "/captacao", label: "Captação", icon: Zap, pipelineNext: true },
   { href: "/monitor", label: "DJEN", icon: Globe },
   { href: "/processo", label: "Processos", icon: FileText },
-  { href: "/busca", label: "Pesquisa", icon: Search },
+  { href: "/busca", label: "Pesquisa Pontual", icon: Search },
   { href: "/configuracao-ia", label: "IA & Modelos", icon: Brain },
 ] as const;
 
@@ -53,12 +53,12 @@ export function Sidebar() {
         collapsed ? "w-16" : "w-64"
       )}
     >
-      {/* Logo */}
-      <div className="flex h-16 items-center border-b px-4">
-        <Link href="/" className="flex items-center gap-2">
+      {/* Logo and Collapse Toggle */}
+      <div className="flex h-16 items-center justify-between border-b px-4">
+        <Link href="/" className="flex items-center gap-2 overflow-hidden">
           <Scale className="h-7 w-7 text-gold-500 shrink-0" />
           {!collapsed && (
-            <div>
+            <div className="animate-in fade-in slide-in-from-left-2 duration-300">
               <h1 className="text-lg font-bold text-legal-600 dark:text-legal-400">
                 Captacao Blindada
               </h1>
@@ -68,6 +68,17 @@ export function Sidebar() {
             </div>
           )}
         </Link>
+        <button
+          onClick={() => setCollapsed(!collapsed)}
+          className="p-1 rounded-md text-[var(--muted-foreground)] hover:bg-[var(--secondary)] transition-colors"
+          title={collapsed ? "Expandir menu" : "Recolher menu"}
+        >
+          {collapsed ? (
+            <ChevronRight className="h-4 w-4" />
+          ) : (
+            <ChevronLeft className="h-4 w-4" />
+          )}
+        </button>
       </div>
 
       {/* Navigation */}
@@ -156,18 +167,6 @@ export function Sidebar() {
         >
           <LogOut className="h-5 w-5 shrink-0" />
           {!collapsed && <span>Sair</span>}
-        </button>
-
-        {/* Collapse toggle */}
-        <button
-          onClick={() => setCollapsed(!collapsed)}
-          className="flex w-full items-center justify-center rounded-lg py-2 text-[var(--muted-foreground)] hover:bg-[var(--secondary)] transition-colors"
-        >
-          {collapsed ? (
-            <ChevronRight className="h-4 w-4" />
-          ) : (
-            <ChevronLeft className="h-4 w-4" />
-          )}
         </button>
       </div>
     </aside>

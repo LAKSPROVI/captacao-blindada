@@ -1,7 +1,6 @@
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
-import Link from "next/link";
 import {
   api,
   CaptacaoItem,
@@ -32,6 +31,7 @@ import {
   Building2,
   Search,
   Eye,
+  Edit2,
 } from "lucide-react";
 
 // =========================================================================
@@ -80,7 +80,6 @@ export default function CaptacaoPage() {
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
-  const [showMonitorLink, setShowMonitorLink] = useState(false);
 
   // Create form
   const [showCreateForm, setShowCreateForm] = useState(false);
@@ -95,6 +94,9 @@ export default function CaptacaoPage() {
 
   // Executing
   const [executingId, setExecutingId] = useState<number | null>(null);
+
+  // Edit form
+  const [editingCaptacao, setEditingCaptacao] = useState<CaptacaoItem | null>(null);
 
   // =========================================================================
   // Data loading
@@ -129,8 +131,8 @@ export default function CaptacaoPage() {
     setIsLoadingDetail(true);
     try {
       const [hist, res] = await Promise.allSettled([
-        api.historicoCaptacao(id, { limite: 20 }),
-        api.resultadosCaptacao(id, { limite: 50 }),
+        api.historicoCaptacao(id, { limite: 1000000 }),
+        api.resultadosCaptacao(id, { limite: 1000000 }),
       ]);
       if (hist.status === "fulfilled") setHistorico(hist.value.execucoes || []);
       if (res.status === "fulfilled") setResultados(res.value.publicacoes || []);
@@ -149,13 +151,11 @@ export default function CaptacaoPage() {
     setExecutingId(id);
     setError("");
     setSuccess("");
-    setShowMonitorLink(false);
     try {
       const result = await api.executarCaptacao(id);
       setSuccess(
-        `Captação #${id}: ${result.total_resultados} resultado(s) encontrado(s), ${result.novos_resultados} novo(s) salvos`
+        `Captacao #${id} executada: ${result.total_resultados} resultado(s), ${result.novos_resultados} novo(s)`
       );
-      setShowMonitorLink(result.novos_resultados > 0);
       loadData();
       if (expandedId === id) loadDetail(id);
     } catch (err: unknown) {
@@ -249,25 +249,6 @@ export default function CaptacaoPage() {
         </div>
       </div>
 
-      {/* 📊 Data Pipeline Banner */}
-      <div className="rounded-xl border border-blue-200 bg-blue-50/50 p-4 dark:border-blue-800/30 dark:bg-blue-900/10">
-        <div className="flex items-start gap-4">
-          <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-blue-100 dark:bg-blue-900/50">
-            <Activity className="h-5 w-5 text-blue-600 dark:text-blue-400" />
-          </div>
-          <div className="flex-1">
-            <h3 className="text-sm font-semibold text-blue-900 dark:text-blue-300">Hub de Automação & Destino dos Dados</h3>
-            <p className="mt-1 text-sm text-blue-700/80 dark:text-blue-400/80 leading-relaxed">
-              As captações configuradas aqui funcionam como robôs que varrem tribunais e diários oficiais. 
-              <br className="hidden sm:block" />
-              <strong>• Publicações (texto):</strong> São enviadas automaticamente para a aba <Link href="/monitor" className="font-semibold underline">DJEN</Link>.
-              <br className="hidden sm:block" />
-              <strong>• Processos (movimentação):</strong> Dados estruturados são consolidados na aba <Link href="/processos" className="font-semibold underline">Processos</Link>.
-            </p>
-          </div>
-        </div>
-      </div>
-
       {/* Messages */}
       {error && (
         <div className="rounded-lg border border-red-300 bg-red-50 dark:bg-red-900/20 p-3 text-sm text-red-700 dark:text-red-400 flex items-center gap-2">
@@ -277,19 +258,10 @@ export default function CaptacaoPage() {
         </div>
       )}
       {success && (
-        <div className="rounded-lg border border-green-300 bg-green-50 dark:bg-green-900/20 p-3 text-sm text-green-700 dark:text-green-400 flex items-center gap-2 flex-wrap">
+        <div className="rounded-lg border border-green-300 bg-green-50 dark:bg-green-900/20 p-3 text-sm text-green-700 dark:text-green-400 flex items-center gap-2">
           <CheckCircle2 className="h-4 w-4 shrink-0" />
-          <span className="flex-1">{success}</span>
-          {showMonitorLink && (
-            <Link
-              href="/monitor"
-              className="inline-flex items-center gap-1.5 rounded-md bg-green-600 px-3 py-1 text-xs font-semibold text-white hover:bg-green-700 transition-colors"
-            >
-              <Eye className="h-3 w-3" />
-              Ver no DJEN →
-            </Link>
-          )}
-          <button onClick={() => { setSuccess(""); setShowMonitorLink(false); }} className="text-green-500 hover:text-green-700">&times;</button>
+          {success}
+          <button onClick={() => setSuccess("")} className="ml-auto text-green-500 hover:text-green-700">&times;</button>
         </div>
       )}
 
@@ -323,17 +295,27 @@ export default function CaptacaoPage() {
         </div>
       )}
 
-      {/* Create form */}
-      {showCreateForm && (
-        <CreateCaptacaoForm
+      {/* Form (Create or Edit) */}
+      {(showCreateForm || editingCaptacao) && (
+        <CaptacaoForm
+          initialData={editingCaptacao}
           onCreated={() => {
             setShowCreateForm(false);
+            setEditingCaptacao(null);
             setSuccess("Captacao criada com sucesso!");
             loadData();
           }}
-          onCancel={() => setShowCreateForm(false)}
-          isCreating={isCreating}
-          setIsCreating={setIsCreating}
+          onUpdated={() => {
+            setEditingCaptacao(null);
+            setSuccess("Captacao atualizada com sucesso!");
+            loadData();
+          }}
+          onCancel={() => {
+            setShowCreateForm(false);
+            setEditingCaptacao(null);
+          }}
+          isSaving={isCreating}
+          setIsSaving={setIsCreating}
           setError={setError}
         />
       )}
@@ -378,6 +360,7 @@ export default function CaptacaoPage() {
               historico={historico}
               resultados={resultados}
               isLoadingDetail={isLoadingDetail}
+              onEditar={() => setEditingCaptacao(cap)}
             />
           ))
         )}
@@ -404,6 +387,7 @@ function CaptacaoCard({
   historico,
   resultados,
   isLoadingDetail,
+  onEditar,
 }: {
   captacao: CaptacaoItem;
   isExpanded: boolean;
@@ -418,6 +402,7 @@ function CaptacaoCard({
   historico: CaptacaoExecucao[];
   resultados: PublicacaoItem[];
   isLoadingDetail: boolean;
+  onEditar: () => void;
 }) {
   const tipoLabel = TIPO_BUSCA_OPTIONS.find((t) => t.value === captacao.tipo_busca)?.label || captacao.tipo_busca;
   const prioridadeInfo = PRIORIDADE_OPTIONS.find((p) => p.value === captacao.prioridade) || PRIORIDADE_OPTIONS[1];
@@ -465,11 +450,8 @@ function CaptacaoCard({
           <div className="flex items-center gap-3 mt-1 text-xs text-[var(--muted-foreground)] flex-wrap">
             <span className="inline-flex items-center gap-1"><Search className="h-3 w-3" /> {tipoLabel}</span>
             <span className="inline-flex items-center gap-1"><Eye className="h-3 w-3" /> {searchTarget()}</span>
-            <div className="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-amber-500/10 text-amber-700 dark:text-amber-400">
-               <Clock className="h-3 w-3" />
-               A cada {intervaloLabel} ({captacao.horario_inicio}–{captacao.horario_fim})
-            </div>
-            <span className="inline-flex items-center gap-1"><FileText className="h-3 w-3" /> {captacao.total_resultados} resultados</span>
+            <span className="inline-flex items-center gap-1"><Clock className="h-3 w-3" /> {intervaloLabel}</span>
+            <span className="inline-flex items-center gap-1"><FileText className="h-3 w-3" /> {captacao.total_resultados} resultados ({captacao.total_novos} novos)</span>
           </div>
         </div>
 
@@ -511,6 +493,14 @@ function CaptacaoCard({
             title="Desativar"
           >
             <Trash2 className="h-3 w-3" />
+          </button>
+
+          <button
+            onClick={onEditar}
+            className="rounded-md border px-2 py-1.5 text-xs text-blue-500 hover:bg-blue-50 dark:hover:bg-blue-900/20 transition-colors"
+            title="Editar"
+          >
+            <Edit2 className="h-3 w-3" />
           </button>
         </div>
       </div>
@@ -656,7 +646,7 @@ function ResultadosList({ publicacoes }: { publicacoes: PublicacaoItem[] }) {
           </div>
           {pub.conteudo && (
             <p className="text-xs text-[var(--muted-foreground)] line-clamp-3 mt-1">
-              {pub.conteudo.length > 300 ? pub.conteudo.slice(0, 300) + "..." : pub.conteudo}
+              {pub.conteudo}
             </p>
           )}
         </div>
@@ -666,42 +656,50 @@ function ResultadosList({ publicacoes }: { publicacoes: PublicacaoItem[] }) {
 }
 
 // =========================================================================
-// CreateCaptacaoForm
+// CaptacaoForm Component (Create & Edit)
 // =========================================================================
 
-function CreateCaptacaoForm({
+function CaptacaoForm({
   onCreated,
+  onUpdated,
   onCancel,
-  isCreating,
-  setIsCreating,
+  isSaving,
+  setIsSaving,
   setError,
+  initialData,
 }: {
   onCreated: () => void;
+  onUpdated: () => void;
   onCancel: () => void;
-  isCreating: boolean;
-  setIsCreating: (v: boolean) => void;
+  isSaving: boolean;
+  setIsSaving: (v: boolean) => void;
   setError: (v: string) => void;
+  initialData: CaptacaoItem | null;
 }) {
-  const [nome, setNome] = useState("");
-  const [descricao, setDescricao] = useState("");
-  const [tipoBusca, setTipoBusca] = useState("processo");
-  const [numeroProcesso, setNumeroProcesso] = useState("");
-  const [numeroOab, setNumeroOab] = useState("");
-  const [ufOab, setUfOab] = useState("SP");
-  const [nomeParte, setNomeParte] = useState("");
-  const [nomeAdvogado, setNomeAdvogado] = useState("");
-  const [tribunal, setTribunal] = useState("");
-  const [classeCodigo, setClasseCodigo] = useState("");
-  const [assuntoCodigo, setAssuntoCodigo] = useState("");
-  const [dataInicio, setDataInicio] = useState("");
-  const [dataFim, setDataFim] = useState("");
-  const [fontes, setFontes] = useState(["datajud", "djen_api"]);
-  const [intervalo, setIntervalo] = useState(120);
-  const [horarioInicio, setHorarioInicio] = useState("06:00");
-  const [horarioFim, setHorarioFim] = useState("23:00");
-  const [diasSemana, setDiasSemana] = useState("1,2,3,4,5");
-  const [prioridade, setPrioridade] = useState("normal");
-  const [autoEnriquecer, setAutoEnriquecer] = useState(false);
+  const [nome, setNome] = useState(initialData?.nome || "");
+  const [descricao, setDescricao] = useState(initialData?.descricao || "");
+  const [tipoBusca, setTipoBusca] = useState(initialData?.tipo_busca || "processo");
+  
+  // Parametros especificos
+  const [numeroProcesso, setNumeroProcesso] = useState(initialData?.numero_processo || "");
+  const [numeroOab, setNumeroOab] = useState(initialData?.numero_oab || "");
+  const [ufOab, setUfOab] = useState(initialData?.uf_oab || "SP");
+  const [nomeParte, setNomeParte] = useState(initialData?.nome_parte || "");
+  const [nomeAdvogado, setNomeAdvogado] = useState(initialData?.nome_advogado || "");
+  const [tribunal, setTribunal] = useState(initialData?.tribunal || "");
+  const [classeCodigo, setClasseCodigo] = useState(initialData?.classe_codigo?.toString() || "");
+  const [assuntoCodigo, setAssuntoCodigo] = useState(initialData?.assunto_codigo?.toString() || "");
+  
+  const [dataInicio, setDataInicio] = useState(initialData?.data_inicio || "");
+  const [dataFim, setDataFim] = useState(initialData?.data_fim || "");
+  const [fontes, setFontes] = useState(initialData?.fontes ? initialData.fontes.split(",") : ["datajud", "djen_api"]);
+  const [intervalo, setIntervalo] = useState(initialData?.intervalo_minutos || 120);
+  const [horarioInicio, setHorarioInicio] = useState(initialData?.horario_inicio || "06:00");
+  const [horarioFim, setHorarioFim] = useState(initialData?.horario_fim || "23:00");
+  const [diasSemana, setDiasSemana] = useState(initialData?.dias_semana || "1,2,3,4,5");
+  const [prioridade, setPrioridade] = useState(initialData?.prioridade || "normal");
+  const [autoEnriquecer, setAutoEnriquecer] = useState(initialData?.auto_enriquecer || false);
+  const [modalidade, setModalidade] = useState<"recorrente" | "faixa_fixa">(initialData?.modalidade || "recorrente");
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -710,13 +708,45 @@ function CreateCaptacaoForm({
       return;
     }
 
-    setIsCreating(true);
+    setIsSaving(true);
     setError("");
 
-    const params: CaptacaoCreateParams = {
+    // Validação de campos obrigatórios
+    if (tipoBusca === "processo" && !numeroProcesso.trim()) {
+      setError("Número do processo é obrigatório para este tipo de busca.");
+      setIsSaving(false); return;
+    }
+    if (tipoBusca === "oab" && (!numeroOab.trim() || !ufOab.trim())) {
+      setError("Número OAB e UF são obrigatórios para este tipo de busca.");
+      setIsSaving(false); return;
+    }
+    if (tipoBusca === "nome_parte" && !nomeParte.trim()) {
+      setError("Nome da parte é obrigatório para este tipo de busca.");
+      setIsSaving(false); return;
+    }
+    if (tipoBusca === "nome_advogado" && !nomeAdvogado.trim()) {
+      setError("Nome do advogado é obrigatório para este tipo de busca.");
+      setIsSaving(false); return;
+    }
+    if (["classe", "assunto", "tribunal_geral"].includes(tipoBusca) && !tribunal.trim()) {
+      setError("Tribunal é obrigatório para este tipo de busca.");
+      setIsSaving(false); return;
+    }
+
+    if (modalidade === "faixa_fixa" && (!dataInicio || !dataFim)) {
+      setError("Data de início e fim são obrigatórias para a modalidade 'Faixa Fixa'.");
+      setIsSaving(false); return;
+    }
+    if (modalidade === "recorrente" && !dataInicio) {
+      setError("Data de início é obrigatória para a modalidade 'Recorrente' (será o ponto de partida).");
+      setIsSaving(false); return;
+    }
+
+    const params: Partial<CaptacaoCreateParams> = {
       nome: nome.trim(),
-      descricao: descricao.trim() || undefined,
+      descricao: descricao.trim() || "",
       tipo_busca: tipoBusca,
+      modalidade,
       fontes,
       intervalo_minutos: intervalo,
       horario_inicio: horarioInicio,
@@ -727,29 +757,34 @@ function CreateCaptacaoForm({
     };
 
     // Add type-specific fields
-    if (tipoBusca === "processo" && numeroProcesso) params.numero_processo = numeroProcesso.trim();
+    if (tipoBusca === "processo") params.numero_processo = numeroProcesso.trim();
     if (tipoBusca === "oab") {
       params.numero_oab = numeroOab.trim();
       params.uf_oab = ufOab.trim() || "SP";
     }
-    if (tipoBusca === "nome_parte" && nomeParte) params.nome_parte = nomeParte.trim();
-    if (tipoBusca === "nome_advogado" && nomeAdvogado) params.nome_advogado = nomeAdvogado.trim();
-    if (["classe", "assunto", "tribunal_geral"].includes(tipoBusca) && tribunal) {
+    if (tipoBusca === "nome_parte") params.nome_parte = nomeParte.trim();
+    if (tipoBusca === "nome_advogado") params.nome_advogado = nomeAdvogado.trim();
+    if (["classe", "assunto", "tribunal_geral"].includes(tipoBusca)) {
       params.tribunal = tribunal.trim().toLowerCase();
     }
-    if (tipoBusca === "classe" && classeCodigo) params.classe_codigo = parseInt(classeCodigo);
-    if (tipoBusca === "assunto" && assuntoCodigo) params.assunto_codigo = parseInt(assuntoCodigo);
-    if (dataInicio) params.data_inicio = dataInicio;
-    if (dataFim) params.data_fim = dataFim;
+    if (tipoBusca === "classe") params.classe_codigo = classeCodigo ? parseInt(classeCodigo) : undefined;
+    if (tipoBusca === "assunto") params.assunto_codigo = assuntoCodigo ? parseInt(assuntoCodigo) : undefined;
+    params.data_inicio = dataInicio || "";
+    params.data_fim = dataFim || "";
 
     try {
-      await api.criarCaptacao(params);
-      onCreated();
+      if (initialData?.id) {
+        await api.atualizarCaptacao(initialData.id, params);
+        onUpdated();
+      } else {
+        await api.criarCaptacao(params as CaptacaoCreateParams);
+        onCreated();
+      }
     } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : "Erro ao criar captacao";
+      const msg = err instanceof Error ? err.message : "Erro ao salvar captacao";
       setError(msg);
     } finally {
-      setIsCreating(false);
+      setIsSaving(false);
     }
   };
 
@@ -765,7 +800,9 @@ function CreateCaptacaoForm({
 
   return (
     <div className="rounded-lg border bg-[var(--card)] p-6 shadow-sm">
-      <h3 className="text-lg font-semibold text-[var(--card-foreground)] mb-4">Nova Captacao</h3>
+      <h3 className="text-lg font-semibold text-[var(--card-foreground)] mb-4">
+        {initialData ? `Editar Captacao #${initialData.id}` : "Nova Captacao"}
+      </h3>
       <form onSubmit={handleSubmit} className="space-y-4">
         {/* Row 1: Nome + Tipo */}
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -789,8 +826,8 @@ function CreateCaptacaoForm({
             </select>
           </div>
         </div>
-
-        {/* Type-specific fields */}
+        
+        {/* Type-specific fields mapping */}
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           {tipoBusca === "processo" && (
             <div>
@@ -804,7 +841,6 @@ function CreateCaptacaoForm({
               />
             </div>
           )}
-
           {tipoBusca === "oab" && (
             <>
               <div>
@@ -830,7 +866,6 @@ function CreateCaptacaoForm({
               </div>
             </>
           )}
-
           {tipoBusca === "nome_parte" && (
             <div>
               <label className={labelClass}>Nome da Parte</label>
@@ -843,7 +878,6 @@ function CreateCaptacaoForm({
               />
             </div>
           )}
-
           {tipoBusca === "nome_advogado" && (
             <div>
               <label className={labelClass}>Nome do Advogado</label>
@@ -856,7 +890,6 @@ function CreateCaptacaoForm({
               />
             </div>
           )}
-
           {["classe", "assunto", "tribunal_geral"].includes(tipoBusca) && (
             <div>
               <label className={labelClass}>Tribunal (sigla)</label>
@@ -869,7 +902,6 @@ function CreateCaptacaoForm({
               />
             </div>
           )}
-
           {tipoBusca === "classe" && (
             <div>
               <label className={labelClass}>Codigo da Classe</label>
@@ -882,7 +914,6 @@ function CreateCaptacaoForm({
               />
             </div>
           )}
-
           {tipoBusca === "assunto" && (
             <div>
               <label className={labelClass}>Codigo do Assunto</label>
@@ -909,16 +940,51 @@ function CreateCaptacaoForm({
           />
         </div>
 
+        {/* Modalidade */}
+        <div className="space-y-2">
+          <label className={labelClass}>Modalidade de Busca *</label>
+          <div className="flex gap-4">
+            <button
+              type="button"
+              onClick={() => setModalidade("recorrente")}
+              className={`flex-1 flex flex-col items-center gap-1 p-3 rounded-lg border transition-all ${
+                modalidade === "recorrente"
+                  ? "bg-legal-600/10 border-legal-600 text-legal-600"
+                  : "bg-[var(--background)] border-[var(--border)] text-[var(--muted-foreground)] hover:border-legal-500"
+              }`}
+            >
+              <RefreshCw className="h-5 w-5" />
+              <span className="text-sm font-bold">Busca Recorrente</span>
+              <span className="text-[10px] text-center">Busca automática diária a partir da data inicial</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => setModalidade("faixa_fixa")}
+              className={`flex-1 flex flex-col items-center gap-1 p-3 rounded-lg border transition-all ${
+                modalidade === "faixa_fixa"
+                  ? "bg-amber-600/10 border-amber-600 text-amber-600"
+                  : "bg-[var(--background)] border-[var(--border)] text-[var(--muted-foreground)] hover:border-legal-500"
+              }`}
+            >
+              <Calendar className="h-5 w-5" />
+              <span className="text-sm font-bold">Faixa Fixa</span>
+              <span className="text-[10px] text-center">Busca de uma única vez no período especificado</span>
+            </button>
+          </div>
+        </div>
+
         {/* Date range */}
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           <div>
-            <label className={labelClass}>Data Inicio</label>
-            <input type="date" value={dataInicio} onChange={(e) => setDataInicio(e.target.value)} className={inputClass} />
+            <label className={labelClass}>{modalidade === "recorrente" ? "Data de Partida *" : "Data Início *"}</label>
+            <input type="date" value={dataInicio} onChange={(e) => setDataInicio(e.target.value)} className={inputClass} required />
           </div>
-          <div>
-            <label className={labelClass}>Data Fim</label>
-            <input type="date" value={dataFim} onChange={(e) => setDataFim(e.target.value)} className={inputClass} />
-          </div>
+          {modalidade === "faixa_fixa" && (
+            <div>
+              <label className={labelClass}>Data Fim *</label>
+              <input type="date" value={dataFim} onChange={(e) => setDataFim(e.target.value)} className={inputClass} required />
+            </div>
+          )}
         </div>
 
         {/* Fontes */}
@@ -1025,11 +1091,11 @@ function CreateCaptacaoForm({
         <div className="flex gap-3 pt-2">
           <button
             type="submit"
-            disabled={isCreating}
+            disabled={isSaving}
             className="inline-flex items-center gap-2 rounded-lg bg-legal-600 px-4 py-2 text-sm font-medium text-white hover:bg-legal-700 disabled:opacity-50 transition-colors"
           >
-            {isCreating ? <RefreshCw className="h-4 w-4 animate-spin" /> : <Plus className="h-4 w-4" />}
-            {isCreating ? "Criando..." : "Criar Captacao"}
+            {isSaving ? <RefreshCw className="h-4 w-4 animate-spin" /> : initialData ? <Edit2 className="h-4 w-4" /> : <Plus className="h-4 w-4" />}
+            {isSaving ? "Salvando..." : initialData ? "Salvar Alteracoes" : "Criar Captacao"}
           </button>
           <button
             type="button"

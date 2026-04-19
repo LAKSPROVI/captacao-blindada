@@ -160,7 +160,21 @@ def atualizar_captacao(captacao_id: int, req: CaptacaoUpdateRequest):
     if not existing:
         raise HTTPException(status_code=404, detail="Captacao nao encontrada")
 
-    updates = {k: v for k, v in req.model_dump().items() if v is not None}
+    updates = {}
+    data = req.model_dump(exclude_unset=True)
+    
+    for k, v in data.items():
+        if v is None:
+            continue
+        # Converter listas (como fontes) para string separada por virgula
+        if isinstance(v, list):
+            updates[k] = ",".join(str(item.value if hasattr(item, "value") else item) for item in v)
+        # Converter Enums simples para seu valor string
+        elif hasattr(v, "value"):
+            updates[k] = v.value
+        else:
+            updates[k] = v
+
     if not updates:
         return {"status": "success", "message": "Nenhum campo para atualizar"}
 
@@ -207,7 +221,7 @@ def retomar_captacao(captacao_id: int):
 @router.get("/{captacao_id}/historico", summary="Historico de execucoes")
 def historico_captacao(
     captacao_id: int,
-    limite: int = Query(20, ge=1, le=200),
+    limite: int = Query(1000000, ge=1, le=1000000),
     offset: int = Query(0, ge=0),
 ):
     """Lista historico de execucoes de uma captacao."""

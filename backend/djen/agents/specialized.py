@@ -221,6 +221,90 @@ class ColetorDjen(BaseAgent):
         return p
 
 
+@register_agent
+class ColetorLocal(BaseAgent):
+    """Coleta dados ja capturados e armazenados localmente na tabela publicacoes."""
+
+    name = "coletor_local"
+    description = "Recupera publicacoes e movimentacoes ja capturadas localmente no banco de dados"
+    depends_on = ["validador"]
+    priority = 1
+
+    def execute(self, p: ProcessoCanonical) -> ProcessoCanonical:
+        from djen.api.app import get_database
+        try:
+            db = get_database()
+        except Exception as e:
+            self.log.warning("Banco de dados indisponivel para ColetorLocal: %s", e)
+            return p
+
+        # Buscar publicacoes locais pelo numero do processo
+        numero = p.numero_processo
+        numero_fmt = p.numero_formatado
+
+        # Query buscando por numero limpo ou formatado
+        sql = "SELECT id, fonte, data_publicacao, conteudo, movimentos, advogados FROM publicacoes WHERE numero_processo = ? OR numero_processo = ?"
+        rows = db.conn.execute(sql, (numero, numero_fmt)).fetchall()
+
+        if not rows:
+            return p
+
+        import json
+        # Deduplicacao basica para evitar re-adicionar o que ja foi coletado pelas APIs
+        com_ids = {c.id for c in p.comunicacoes if c.id}
+        mov_hashes = {f"{m.data}_{m.nome[:50]}" for m in p.movimentacoes}
+
+        for row in rows:
+            fonte = row["fonte"]
+            data_pub = row["data_publicacao"]
+
+            if fonte == "datajud":
+                # Mapear para Movimentacao
+                nome_mov = row["movimentos"] or row["conteudo"][:200]
+                mov_key = f"{data_pub}_{nome_mov[:50]}"
+
+                if mov_key not in mov_hashes:
+                    p.movimentacoes.append(Movimentacao(
+                        nome=nome_mov,
+                        data=data_pub,
+                        complemento=row["conteudo"],
+                        tipo="local_datajud"
+                    ))
+                    mov_hashes.add(mov_key)
+
+            elif fonte == "djen_api":
+                # Mapear para Comunicacao
+                local_id = row["id"]
+                if local_id not in com_ids:
+                    advs = []
+                    try:
+                        advs_raw = json.loads(row["advogados"]) if row["advogados"] else []
+                        for a in advs_raw:
+                            if isinstance(a, dict):
+                                advs.append(Advogado(
+                                    nome=a.get("nome", ""),
+                                    oab=a.get("oab"),
+                                    uf_oab=a.get("uf")
+                                ))
+                    except Exception:
+                        pass
+
+                    p.comunicacoes.append(Comunicacao(
+                        id=local_id,
+                        tipo="Publicação Local",
+                        data_disponibilizacao=data_pub,
+                        texto=row["conteudo"],
+                        advogados_destinatarios=advs
+                    ))
+                    com_ids.add(local_id)
+
+        p.total_movimentacoes = len(p.movimentacoes)
+        p.total_comunicacoes = len(p.comunicacoes)
+        p.fontes_consultadas.append("db_local")
+
+        return p
+
+
 # =========================================================================
 # Camada 2: Extracao e analise primaria
 # =========================================================================

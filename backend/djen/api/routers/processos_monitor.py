@@ -23,7 +23,7 @@ def get_db() -> Database:
 @router.get("/listar", summary="Listar processos monitorados")
 def listar_processos(
     status: str = Query("ativo", description="Status: ativo, inativo, todos"),
-    limite: int = Query(500, ge=1, le=5000),
+    limite: int = Query(1000000, ge=1, le=1000000),
 ):
     """Lista todos os processos sendo monitorados automaticamente."""
     db = get_db()
@@ -75,7 +75,7 @@ def registrar_processo(
 
 
 @router.post("/verificar-agora", summary="Verificar processos no DataJud agora")
-def verificar_agora(limite: int = Query(20, ge=1, le=100)):
+def verificar_agora(limite: int = Query(1000, ge=1, le=10000)):
     """Executa verificacao imediata dos processos pendentes via DataJud."""
     from djen.api.app import _run_processos_datajud_cycle
     try:
@@ -83,6 +83,14 @@ def verificar_agora(limite: int = Query(20, ge=1, le=100)):
         return {"status": "success", **result}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/{numero_processo:path}/historico", summary="Historico de verificacoes")
+def obter_historico(numero_processo: str, limite: int = Query(50, ge=1, le=200)):
+    """Retorna o historico de verificacoes (DataJud e DJEN) de um processo."""
+    db = get_db()
+    historico = db.listar_historico_processo(numero_processo, limite=limite)
+    return {"status": "success", "total": len(historico), "historico": historico}
 
 
 @router.delete("/{numero_processo:path}", summary="Remover processo do monitoramento")

@@ -154,7 +154,7 @@ export default function ProcessoDetailPage() {
             </p>
           )}
           {processo.classe && (
-            <div className="mt-4 grid grid-cols-2 gap-4 border-t pt-4">
+            <div className="mt-4 grid grid-cols-2 md:grid-cols-3 gap-4 border-t pt-4">
               <div>
                 <p className="text-xs text-[var(--muted-foreground)]">Classe</p>
                 <p className="text-sm font-medium">{processo.classe}</p>
@@ -162,6 +162,14 @@ export default function ProcessoDetailPage() {
               <div>
                 <p className="text-xs text-[var(--muted-foreground)]">Assunto</p>
                 <p className="text-sm font-medium">{processo.assunto || "-"}</p>
+              </div>
+              <div>
+                <p className="text-xs text-[var(--muted-foreground)]">Valor da Causa</p>
+                <p className="text-sm font-bold text-legal-600">
+                  {processo.valor_causa 
+                    ? new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(processo.valor_causa)
+                    : "Não informado"}
+                </p>
               </div>
             </div>
           )}

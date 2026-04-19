@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect, useCallback, useMemo } from "react";
-import { api, ProcessoResult, ProcessoMonitorado, ProcessoMonitoradoStats, PublicacaoItem } from "@/lib/api";
+import { api, ProcessoResult, ProcessoMonitorado, ProcessoMonitoradoStats, PublicacaoItem, ProcMonitorHistory } from "@/lib/api";
 import { ProcessoCard } from "@/components/ProcessoCard";
 import { LoadingSpinner } from "@/components/LoadingSpinner";
 import { TimelineView } from "@/components/TimelineView";
@@ -39,6 +39,7 @@ import {
   Globe,
   Hash,
   CreditCard,
+  Settings,
 } from "lucide-react";
 import { useSearchParams } from "next/navigation";
 import { Suspense } from "react";
@@ -169,6 +170,10 @@ function ProcessoPageInner() {
   const [novoProcesso, setNovoProcesso] = useState({ numero_processo: "", tribunal: "" });
   const [addingProcesso, setAddingProcesso] = useState(false);
 
+  // === Histórico de Verificações ===
+  const [history, setHistory] = useState<ProcMonitorHistory[]>([]);
+  const [loadingHistory, setLoadingHistory] = useState(false);
+
   // === BUSCA E FILTROS ===
   const [searchQuery, setSearchQuery] = useState("");
   const [sortBy, setSortBy] = useState<SortOption>("movim-desc");
@@ -176,6 +181,11 @@ function ProcessoPageInner() {
   const [filterStatus, setFilterStatus] = useState("todos");
   const [filterMovimentacao, setFilterMovimentacao] = useState("todos");
   const [showFilters, setShowFilters] = useState(false);
+
+  // === CONFIGURAÇÃO DE CICLO ===
+  const [showSettings, setShowSettings] = useState(false);
+  const [datajudInterval, setDatajudInterval] = useState(6);
+  const [isSavingSettings, setIsSavingSettings] = useState(false);
 
   // === Controle de visto/não visto (localStorage) ===
   const [seenProcessos, setSeenProcessos] = useState<Record<string, number>>(() => {
@@ -316,7 +326,7 @@ function ProcessoPageInner() {
     setLoadingDjen(true);
     setDjenData([]);
     try {
-      const items = await api.buscarLocal({ termo: numProcesso, limite: 50 });
+      const items = await api.buscarLocal({ termo: numProcesso, limite: 1000000 });
       setDjenData(items);
     } catch {
       // silently fail — DJEN data é complementar
@@ -325,12 +335,24 @@ function ProcessoPageInner() {
     }
   }, []);
 
+  const loadHistory = useCallback(async (numProcesso: string) => {
+    setLoadingHistory(true);
+    try {
+      const h = await api.getProcessoMonitoradoHistory(numProcesso);
+      setHistory(h);
+    } catch {
+      setHistory([]);
+    } finally {
+      setLoadingHistory(false);
+    }
+  }, []);
+
   // === Carregar processos monitorados ===
   const loadProcessos = useCallback(async () => {
     try {
       setLoadingProcessos(true);
       const [lista, stats] = await Promise.all([
-        api.listarProcessosMonitorados({ limite: 200 }),
+        api.listarProcessosMonitorados({ limite: 1000000 }),
         api.getProcessoMonitoradoStats(),
       ]);
       setProcessos(lista.processos || []);
@@ -342,10 +364,20 @@ function ProcessoPageInner() {
     }
   }, []);
 
+  const loadSettings = useCallback(async () => {
+    try {
+      const s = await api.getSettings();
+      if (s.datajud_update_interval_hours) {
+        setDatajudInterval(parseInt(s.datajud_update_interval_hours));
+      }
+    } catch { /* ignore */ }
+  }, []);
+
   useEffect(() => {
     loadProcessos();
     loadResultados();
-  }, [loadProcessos]);
+    loadSettings();
+  }, [loadProcessos, loadSettings]);
 
   useEffect(() => {
     if (initialQuery) {
@@ -359,12 +391,13 @@ function ProcessoPageInner() {
   useEffect(() => {
     if (selectedProcesso) {
       loadDjenData(selectedProcesso.numero_processo);
+      loadHistory(selectedProcesso.numero_processo);
     }
-  }, [selectedProcesso, loadDjenData]);
+  }, [selectedProcesso, loadDjenData, loadHistory]);
 
   const loadResultados = async () => {
     try {
-      const data = await api.getResultados({ limit: 12 });
+      const data = await api.getResultados({ limit: 1000000 });
       setResultados(Array.isArray(data) ? data : data.items || []);
     } catch {
       // silently fail
@@ -390,7 +423,7 @@ function ProcessoPageInner() {
           numero_processo: numero.trim(),
           tribunal: tribunal || undefined,
         }),
-        api.buscarLocal({ termo: numero.trim(), limite: 50 }).catch(() => []),
+        api.buscarLocal({ termo: numero.trim(), limite: 1000000 }).catch(() => []),
       ]);
       setResult(data);
       setDjenData(djenItems);
@@ -463,9 +496,25 @@ function ProcessoPageInner() {
     }
   };
 
+  const handleSaveInterval = async (val: number) => {
+    setIsSavingSettings(true);
+    try {
+      await api.updateSetting("datajud_update_interval_hours", val.toString());
+      setDatajudInterval(val);
+      setShowSettings(false);
+      // Recarregar stats para ver se a proxima verificacao mudou (embora o backend faca isso)
+      loadProcessos();
+    } catch {
+      alert("Erro ao salvar configuração");
+    } finally {
+      setIsSavingSettings(false);
+    }
+  };
+
   const tabs = [
     { id: "resumo", label: "Resumo", icon: FileText },
-    { id: "timeline", label: "Timeline", icon: Clock },
+    { id: "timeline", label: "Timeline Unificada", icon: Clock },
+    { id: "historico", label: "Histórico de Verificações", icon: Activity },
     { id: "riscos", label: "Riscos", icon: ShieldAlert },
     { id: "djen", label: "Publicações DJEN", icon: Globe },
     { id: "dados", label: "Dados Completos", icon: Database },
@@ -724,6 +773,12 @@ function ProcessoPageInner() {
               >
                 <Plus className="h-4 w-4" /> Adicionar Processo
               </button>
+              <button
+                onClick={() => setShowSettings(true)}
+                className="flex items-center gap-2 rounded-lg border px-4 py-2 text-sm font-medium text-[var(--foreground)] transition-colors hover:bg-[var(--secondary)]"
+              >
+                <Settings className="h-4 w-4" /> Configurar Ciclo
+              </button>
             </div>
             <div className="flex gap-2">
               <button
@@ -772,6 +827,75 @@ function ProcessoPageInner() {
               </div>
             </div>
           )}
+
+          {/* Config Settings Modal */}
+          {showSettings && (
+            <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4 backdrop-blur-sm">
+              <div className="w-full max-w-md rounded-xl border bg-[var(--card)] p-6 shadow-2xl animate-in fade-in zoom-in duration-200">
+                <div className="flex items-center justify-between mb-6">
+                  <div className="flex items-center gap-2">
+                    <div className="p-2 rounded-lg bg-legal-600/10 text-legal-600">
+                      <Settings className="h-5 w-5" />
+                    </div>
+                    <h3 className="text-lg font-bold text-[var(--card-foreground)]">Configuração de Ciclo</h3>
+                  </div>
+                  <button onClick={() => setShowSettings(false)} className="text-[var(--muted-foreground)] hover:text-[var(--foreground)]">
+                    <X className="h-5 w-5" />
+                  </button>
+                </div>
+
+                <div className="space-y-6">
+                  <div>
+                    <label className="block text-sm font-semibold text-[var(--card-foreground)] mb-2">
+                      Frequência de Verificação no DataJud
+                    </label>
+                    <p className="text-xs text-[var(--muted-foreground)] mb-4 leading-relaxed">
+                      Defina de quanto em quanto tempo o sistema deve consultar o CNJ para buscar novas movimentações nos processos monitorados abaixo.
+                    </p>
+                    
+                    <div className="grid grid-cols-2 gap-3">
+                      {[1, 3, 6, 12, 24, 48].map((h) => (
+                        <button
+                          key={h}
+                          onClick={() => handleSaveInterval(h)}
+                          disabled={isSavingSettings}
+                          className={`flex flex-col items-center justify-center p-4 rounded-xl border-2 transition-all ${
+                            datajudInterval === h
+                              ? "border-legal-600 bg-legal-600/5 text-legal-600"
+                              : "border-[var(--secondary)] bg-[var(--secondary)]/20 text-[var(--muted-foreground)] hover:border-legal-600/30 hover:text-[var(--foreground)]"
+                          }`}
+                        >
+                          <span className="text-lg font-bold">{h}h</span>
+                          <span className="text-[10px] uppercase tracking-wider font-semibold">
+                            {h === 1 ? "Cada hora" : `A cada ${h}h`}
+                          </span>
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  <div className="p-4 rounded-lg bg-blue-50/50 border border-blue-100">
+                    <div className="flex gap-3">
+                      <Clock className="h-4 w-4 text-blue-600 shrink-0 mt-0.5" />
+                      <div className="text-xs text-blue-800 leading-relaxed">
+                        <strong>Dica:</strong> Intervalos mais curtos garantem dados mais recentes, mas podem aumentar a latência se você tiver centenas de processos.
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="mt-8 flex justify-end">
+                  <button
+                    onClick={() => setShowSettings(false)}
+                    className="px-6 py-2.5 rounded-lg text-sm font-medium text-[var(--muted-foreground)] hover:bg-[var(--secondary)] transition-colors"
+                  >
+                    Fechar
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
+
 
           {/* ══════ DETALHE DO PROCESSO SELECIONADO — TIMELINE UNIFICADA ══════ */}
           {selectedProcesso && (() => {
@@ -1369,6 +1493,94 @@ function ProcessoPageInner() {
                       </div>
                     ) : (
                       <p className="text-[var(--muted-foreground)]">Analise de riscos nao disponivel.</p>
+                    )}
+                  </div>
+                )}
+
+                {activeTab === "historico" && (
+                  <div className="space-y-4">
+                    <div className="flex items-center justify-between">
+                      <h3 className="text-lg font-semibold text-[var(--card-foreground)] flex items-center gap-2">
+                        <Activity className="h-5 w-5 text-legal-600" />
+                        Histórico de Verificações
+                      </h3>
+                      <button 
+                        onClick={() => selectedProcesso && loadHistory(selectedProcesso.numero_processo)}
+                        className="text-xs text-legal-600 hover:underline flex items-center gap-1"
+                      >
+                        <RefreshCw className={`h-3 w-3 ${loadingHistory ? 'animate-spin' : ''}`} />
+                        Atualizar
+                      </button>
+                    </div>
+
+                    {loadingHistory ? (
+                      <div className="py-12 text-center">
+                        <div className="h-8 w-8 animate-spin rounded-full border-4 border-legal-600 border-t-transparent mx-auto mb-4" />
+                        <p className="text-sm text-[var(--muted-foreground)]">Carregando histórico...</p>
+                      </div>
+                    ) : history.length > 0 ? (
+                      <div className="rounded-lg border overflow-hidden">
+                        <table className="w-full text-sm">
+                          <thead>
+                            <tr className="bg-[var(--secondary)] border-b">
+                              <th className="text-left px-4 py-3 font-medium text-[var(--muted-foreground)]">Data/Hora</th>
+                              <th className="text-left px-4 py-3 font-medium text-[var(--muted-foreground)] font-mono">Fonte</th>
+                              <th className="text-center px-4 py-3 font-medium text-[var(--muted-foreground)]">Status</th>
+                              <th className="text-left px-4 py-3 font-medium text-[var(--muted-foreground)] font-mono">Resultado</th>
+                              <th className="text-left px-4 py-3 font-medium text-[var(--muted-foreground)]">Detalhes</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {history.map((h) => (
+                              <tr key={h.id} className="border-b hover:bg-[var(--secondary)]/30 transition-colors">
+                                <td className="px-4 py-3 whitespace-nowrap text-xs text-[var(--card-foreground)]">
+                                  {formatDateBR(h.data_verificacao)}
+                                </td>
+                                <td className="px-4 py-3">
+                                  <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider ${
+                                    h.fonte === 'datajud' 
+                                      ? 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400' 
+                                      : 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400'
+                                  }`}>
+                                    {h.fonte}
+                                  </span>
+                                </td>
+                                <td className="px-4 py-3 text-center">
+                                  {h.status === 'ok' ? (
+                                    <CheckCircle2 className="h-4 w-4 text-green-600 mx-auto" title="Sucesso" />
+                                  ) : h.status === 'sem_mudancas' ? (
+                                    <Clock className="h-4 w-4 text-gray-400 mx-auto" title="Sem mudanças" />
+                                  ) : (
+                                    <AlertCircle className="h-4 w-4 text-red-500 mx-auto" title="Erro" />
+                                  )}
+                                </td>
+                                <td className="px-4 py-3">
+                                  <div className="flex flex-col gap-0.5">
+                                    <span className="text-xs font-medium text-[var(--card-foreground)]">
+                                      {h.total_movimentacoes} Encontrados
+                                    </span>
+                                    {h.novas_movimentacoes > 0 && (
+                                      <span className="text-[10px] font-bold text-green-600">
+                                        +{h.novas_movimentacoes} novos
+                                      </span>
+                                    )}
+                                  </div>
+                                </td>
+                                <td className="px-4 py-3">
+                                  <p className="text-xs text-[var(--muted-foreground)] line-clamp-2" title={h.detalhes}>
+                                    {h.detalhes || "-"}
+                                  </p>
+                                </td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    ) : (
+                      <div className="rounded-lg bg-[var(--secondary)] p-8 text-center text-sm text-[var(--muted-foreground)]">
+                        <Activity className="h-10 w-10 mx-auto mb-3 opacity-20" />
+                        Ainda não há registros de verificação automática para este processo.
+                      </div>
                     )}
                   </div>
                 )}

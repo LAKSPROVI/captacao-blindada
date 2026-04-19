@@ -171,6 +171,17 @@ export interface ProcessoMonitorado {
   atualizado_em?: string;
 }
 
+export interface ProcMonitorHistory {
+  id: number;
+  numero_processo: string;
+  data_verificacao: string;
+  status: string;
+  fonte: string;
+  detalhes?: string;
+  total_movimentacoes: number;
+  novas_movimentacoes: number;
+}
+
 export interface AIConfig {
   function_key: string;
   provider: string;
@@ -598,6 +609,13 @@ class ApiClient {
     return data;
   }
 
+  async getProcessoMonitoradoHistory(numero: string): Promise<ProcMonitorHistory[]> {
+    const { data } = await this.client.get<{ status: string; historico: ProcMonitorHistory[] }>(
+      `/processos/${encodeURIComponent(numero)}/historico`
+    );
+    return data.historico || [];
+  }
+
   // IA Config
   async getAIConfigs(): Promise<AIConfig[]> {
     const { data } = await this.client.get<AIConfig[]>("/ai/config");
@@ -618,6 +636,17 @@ class ApiClient {
     const { data } = await this.client.post("/ai/test", config);
     return data;
   }
+
+  // Settings
+  async getSettings(): Promise<Record<string, string>> {
+    const { data } = await this.client.get<Record<string, string>>("/settings");
+    return data;
+  }
+
+  async updateSetting(key: string, value: any): Promise<{ status: string }> {
+    const { data } = await this.client.post<{ status: string }>("/settings", { key, value });
+    return data;
+  }
 }
 
 // =========================================================================
@@ -630,6 +659,7 @@ export interface CaptacaoItem {
   descricao?: string;
   ativo: boolean;
   tipo_busca: string;
+  modalidade: "recorrente" | "faixa_fixa";
   numero_processo?: string;
   numero_oab?: string;
   uf_oab?: string;
@@ -672,6 +702,7 @@ export interface CaptacaoCreateParams {
   nome: string;
   descricao?: string;
   tipo_busca: string;
+  modalidade: "recorrente" | "faixa_fixa";
   numero_processo?: string;
   numero_oab?: string;
   uf_oab?: string;

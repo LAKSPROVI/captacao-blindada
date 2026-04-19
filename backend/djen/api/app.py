@@ -73,30 +73,53 @@ def _run_processos_datajud_cycle(limite: int = 50):
         log.info("[Scheduler] Verificando movimentacoes para %d processos", len(processos))
 
         from djen.sources.datajud import DatajudSource
-        source = DatajudSource()
+        from djen.sources.djen_source import DjenSource
+        
+        dj_source = DatajudSource()
+        djen_source = DjenSource()
         
         atualizados = 0
         for proc in processos:
+            numero = proc["numero_processo"]
+            tribunal = proc.get("tribunal")
+            
+            # 1. Verificar DataJud (Metadados/Movimentacoes)
             try:
-                resultados = source.buscar(termo=proc["numero_processo"], tribunal=proc.get("tribunal"))
-                if resultados:
-                    # DataJudSource retorna PublicacaoResult, mas para processo pegamos movimentos
-                    movs = []
-                    # O DataJudSource geralmente coloca o JSON bruto ou lista de movimentos no atributo customizado ou conteudo
-                    # Assumindo que o source ja traz os movimentos estruturados se disponivel
-                    for r in resultados:
-                        if hasattr(r, 'movimentos') and r.movimentos:
-                            movs.extend(r.movimentos)
-                    
-                    if movs:
-                        db.atualizar_movimentacoes_processo(
-                            proc["numero_processo"],
-                            movs,
-                            tribunal=proc.get("tribunal")
-                        )
-                        atualizados += 1
+                dj_res = dj_source.buscar(termo=numero, tribunal=tribunal)
+                movs = []
+                for r in dj_res:
+                    if hasattr(r, "movimentos") and r.movimentos:
+                        movs.extend(r.movimentos)
+                
+                if movs:
+                    db.atualizar_movimentacoes_processo(numero, movs, tribunal=tribunal)
+                    db.registrar_historico_processo(
+                        numero, "ok", "datajud", len(movs), 0, 
+                        f"Capturadas {len(movs)} movimentacoes."
+                    )
+                    atualizados += 1
+                else:
+                    db.registrar_historico_processo(numero, "sem_mudancas", "datajud", 0, 0)
             except Exception as e:
-                log.error("[Scheduler] Erro verificando processo %s: %s", proc["numero_processo"], e)
+                db.registrar_historico_processo(numero, "erro", "datajud", 0, 0, str(e))
+                log.error("[Scheduler] Erro DataJud processo %s: %s", numero, e)
+
+            # 2. Verificar DJEN (Publicacoes/Texto)
+            try:
+                # Busca comunicacoes dos ultimos 30 dias para este processo
+                djen_res = djen_source.buscar(termo=numero, tribunal=tribunal)
+                if djen_res:
+                    for pub in djen_res:
+                        db.salvar_publicacao(pub.to_dict())
+                    db.registrar_historico_processo(
+                        numero, "ok", "djen", len(djen_res), 0,
+                        f"Encontradas {len(djen_res)} publicacoes no DJEN."
+                    )
+                else:
+                    db.registrar_historico_processo(numero, "sem_mudancas", "djen", 0, 0)
+            except Exception as e:
+                db.registrar_historico_processo(numero, "erro", "djen", 0, 0, str(e))
+                log.error("[Scheduler] Erro DJEN processo %s: %s", numero, e)
 
         return {"status": "success", "verificados": len(processos), "atualizados": atualizados}
 
@@ -135,13 +158,16 @@ def start_scheduler():
             replace_existing=True,
         )
 
-        # Verificacao de movimentacoes DataJud a cada 6 horas (para processos ja registrados)
+        # Verificacao de movimentacoes DataJud (intervalo configuravel)
+        db = get_database()
+        intervalo = int(db.get_setting("datajud_update_interval_hours", 6))
+        
         _scheduler.add_job(
             _run_processos_datajud_cycle,
             "interval",
-            hours=6,
+            hours=intervalo,
             id="processos_datajud_cycle",
-            name="Verificacao de movimentacoes DataJud (6h)",
+            name=f"Verificacao de movimentacoes DataJud ({intervalo}h)",
             replace_existing=True,
         )
 
@@ -162,6 +188,25 @@ def start_scheduler():
         log.warning("[Scheduler] Instale com: pip install apscheduler")
     except Exception as e:
         log.error("[Scheduler] Erro ao iniciar: %s", e)
+
+
+def reschedule_datajud_job(hours: int):
+    """Reagenda o job de verificacao do DataJud com novo intervalo."""
+    global _scheduler
+    if not _scheduler:
+        return
+        
+    try:
+        _scheduler.reschedule_job(
+            "processos_datajud_cycle",
+            trigger="interval",
+            hours=hours
+        )
+        # Atualizar nome para clareza
+        _scheduler.modify_job("processos_datajud_cycle", name=f"Verificacao de movimentacoes DataJud ({hours}h)")
+        log.info("[Scheduler] Job DataJud reagendado para cada %d horas", hours)
+    except Exception as e:
+        log.error("[Scheduler] Erro ao reagendar job DataJud: %s", e)
 
 
 # =========================================================================
@@ -244,6 +289,7 @@ from djen.api.routers.processo import router as processo_router
 from djen.api.routers.captacao import router as captacao_router
 from djen.api.routers.processos_monitor import router as processos_monitor_router
 from djen.api.routers.ai_config import router as ai_config_router
+from djen.api.routers.settings import router as settings_router
 
 # Auth router (public endpoints: login, etc.)
 app.include_router(auth_router)
@@ -257,6 +303,7 @@ app.include_router(processo_router)
 app.include_router(captacao_router)
 app.include_router(processos_monitor_router)
 app.include_router(ai_config_router)
+app.include_router(settings_router)
 
 
 # =========================================================================
@@ -272,7 +319,12 @@ def root():
 
 
 @app.post("/api/buscar/unificada", tags=["Busca Unificada"], summary="Busca em multiplas fontes")
-def busca_unificada(termo: str, tribunal: Optional[str] = None):
+def busca_unificada(
+    termo: str,
+    tribunal: Optional[str] = None,
+    data_inicio: Optional[str] = None,
+    data_fim: Optional[str] = None
+):
     """
     Busca unificada em DataJud + DJEN simultaneamente.
     Retorna resultados combinados de metadados processuais + comunicacoes.
@@ -287,11 +339,11 @@ def busca_unificada(termo: str, tribunal: Optional[str] = None):
 
     def buscar_datajud():
         source = DatajudSource()
-        return source.buscar(termo=termo, tribunal=tribunal)
+        return source.buscar(termo=termo, tribunal=tribunal, data_inicio=data_inicio, data_fim=data_fim)
 
     def buscar_djen():
         source = DjenSource()
-        return source.buscar(termo=termo, tribunal=tribunal)
+        return source.buscar(termo=termo, tribunal=tribunal, data_inicio=data_inicio, data_fim=data_fim)
 
     with ThreadPoolExecutor(max_workers=2) as executor:
         futures = {
