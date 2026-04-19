@@ -20,6 +20,7 @@ import {
   Settings,
   ShieldCheck,
   AlertTriangle,
+  Zap,
 } from "lucide-react";
 import { useState, useEffect } from "react";
 
