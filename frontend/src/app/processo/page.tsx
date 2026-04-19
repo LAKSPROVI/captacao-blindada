@@ -1547,11 +1547,11 @@ function ProcessoPageInner() {
                                 </td>
                                 <td className="px-4 py-3 text-center">
                                   {h.status === 'ok' ? (
-                                    <CheckCircle2 className="h-4 w-4 text-green-600 mx-auto" title="Sucesso" />
+                                    <span title="Sucesso"><CheckCircle2 className="h-4 w-4 text-green-600 mx-auto" /></span>
                                   ) : h.status === 'sem_mudancas' ? (
-                                    <Clock className="h-4 w-4 text-gray-400 mx-auto" title="Sem mudanças" />
+                                    <span title="Sem mudanças"><Clock className="h-4 w-4 text-gray-400 mx-auto" /></span>
                                   ) : (
-                                    <AlertCircle className="h-4 w-4 text-red-500 mx-auto" title="Erro" />
+                                    <span title="Erro"><AlertCircle className="h-4 w-4 text-red-500 mx-auto" /></span>
                                   )}
                                 </td>
                                 <td className="px-4 py-3">

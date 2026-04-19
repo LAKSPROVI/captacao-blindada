@@ -1039,25 +1039,25 @@ export default function MonitorPage() {
 
       {/* Stats */}
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
-        <StatsCard
-          title="Total de Monitores"
+        <span title="Total de Monitores"><StatsCard
+         
           value={stats.total_monitorados ?? monitors.length}
           icon={Eye}
-        />
-        <StatsCard
-          title="Monitores Ativos"
+        /></span>
+        <span title="Monitores Ativos"><StatsCard
+         
           value={stats.monitorados_ativos ?? 0}
           icon={Activity}
-        />
+        /></span>
         <div
           onClick={handleTogglePublicacoes}
           className="cursor-pointer hover:ring-2 hover:ring-legal-600/30 rounded-lg transition-all"
         >
-          <StatsCard
-            title="Publicações Encontradas"
+          <span title="Publicações Encontradas"><StatsCard
+           
             value={stats.total_publicacoes ?? 0}
             icon={Newspaper}
-          />
+          /></span>
         </div>
       </div>
 
