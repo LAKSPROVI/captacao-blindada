@@ -43,6 +43,17 @@ class StatusMonitorado(str, Enum):
     inativo = "inativo"
 
 
+class TipoBusca(str, Enum):
+    processo = "processo"
+    oab = "oab"
+    nome_parte = "nome_parte"
+    nome_advogado = "nome_advogado"
+    classe = "classe"
+    assunto = "assunto"
+    tribunal_geral = "tribunal_geral"
+    todas = "todas"
+
+
 # =========================================================================
 # Request Models
 # =========================================================================
