@@ -97,44 +97,20 @@ class LLMClient:
                         current_api_key = config["api_key"]
                     if config.get("base_url"):
                         current_base_url = config["base_url"]
-                            # ─── NOVO: Suporte a provedores dinâmicos ───
-        current_base_url = self.BASE_URL
-        current_model = model_name or self.DEFAULT_MODEL
-        current_api_key = api_key
-        current_enabled = True
-
-        if function_key:
-            try:
-                # Otimizado: tenta carregar config do banco
-                from djen.api.database import get_db
-                from sqlalchemy import text
-                
-                with get_db() as db:
-                    res = db.execute(text("SELECT provider, model_name, api_key, base_url, enabled FROM ai_configs WHERE function_key = :f"), {"f": function_key}).fetchone()
-                    if res:
-                        provider, db_model, db_key, db_base, enabled = res
-                        current_enabled = bool(enabled)
-                        if current_enabled:
-                            current_model = db_model or current_model
-                            current_api_key = db_key or current_api_key
-                            
-                            # Logica de URL: prioridade para custom, depois provider padrao
-                            if db_base and db_base.strip():
-                                current_base_url = db_base
-                            elif provider:
-                                provider = provider.lower()
-                                PROVIDER_BASE_URLS = {
-                                    "openai": "https://api.openai.com/v1/chat/completions",
-                                    "anthropic": "https://api.anthropic.com/v1/messages",
-                                    "gemini": "https://generativelanguage.googleapis.com/v1beta/openai/chat/completions",
-                                    "google": "https://generativelanguage.googleapis.com/v1beta/openai/chat/completions",
-                                    "ollama": "http://localhost:11434/v1/chat/completions",
-                                    "deepseek": "https://api.deepseek.com/chat/completions"
-                                }
-                                if provider in PROVIDER_BASE_URLS:
-                                    current_base_url = PROVIDER_BASE_URLS[provider]
-                            
-                            log.debug("[%s] Chat: provider=%s, model=%s", function_key, provider, current_model)
+                    
+                    # Logica de provedores
+                    provider = config.get("provider", "").lower()
+                    if provider and not config.get("base_url"):
+                        PROVIDER_BASE_URLS = {
+                            "openai": "https://api.openai.com/v1/chat/completions",
+                            "anthropic": "https://api.anthropic.com/v1/messages",
+                            "gemini": "https://generativelanguage.googleapis.com/v1beta/openai/chat/completions",
+                            "google": "https://generativelanguage.googleapis.com/v1beta/openai/chat/completions",
+                            "ollama": "http://localhost:11434/v1/chat/completions",
+                            "deepseek": "https://api.deepseek.com/chat/completions"
+                        }
+                        if provider in PROVIDER_BASE_URLS:
+                            current_base_url = PROVIDER_BASE_URLS[provider]
             except Exception as e:
                 log.warning("Erro ao carregar ai_config para %s: %s", function_key, e)
 
@@ -168,7 +144,6 @@ class LLMClient:
             resp.raise_for_status()
             data = resp.json()
             
-            # Suporte a diferentes formatos de resposta (OpenAI vs Anthropic se necessário)
             if "choices" in data:
                 return data["choices"][0]["message"]["content"]
             elif "content" in data and isinstance(data["content"], list):
