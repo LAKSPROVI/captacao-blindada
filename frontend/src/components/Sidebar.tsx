@@ -21,6 +21,8 @@ import {
   ShieldCheck,
   AlertTriangle,
   Zap,
+  Brain,
+  User,
 } from "lucide-react";
 import { useState, useEffect } from "react";
 
