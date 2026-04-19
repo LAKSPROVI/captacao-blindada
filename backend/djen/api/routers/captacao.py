@@ -32,7 +32,7 @@ router = APIRouter(prefix="/api/captacao", tags=["Captacao Automatizada"])
 # =========================================================================
 
 def get_db():
-    from djen.api.app import get_database
+    from djen.api.database import get_database
     return get_database()
 
 

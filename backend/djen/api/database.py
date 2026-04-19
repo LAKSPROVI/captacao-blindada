@@ -1137,3 +1137,21 @@ class Database:
         except Exception as e:
             log.error("Erro ao listar settings: %s", e)
             return {}
+
+
+# =========================================================================
+# Singleton DB Accessor
+# =========================================================================
+
+_db_instance: Optional[Database] = None
+
+
+def get_database() -> Database:
+    """
+    Retorna a instancia singleton do banco de dados.
+    Centralizado aqui para evitar circular imports entre app.py e audit.py.
+    """
+    global _db_instance
+    if _db_instance is None:
+        _db_instance = Database()
+    return _db_instance

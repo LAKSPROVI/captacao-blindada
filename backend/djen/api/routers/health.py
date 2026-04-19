@@ -73,7 +73,7 @@ def health_check_completo():
     # Database check
     db_status = "ok"
     try:
-        from djen.api.app import get_database
+        from djen.api.database import get_database
         db = get_database()
         db.conn.execute("SELECT 1")
     except Exception:

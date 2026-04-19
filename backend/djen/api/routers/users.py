@@ -8,7 +8,7 @@ from djen.api.schemas import (
     TenantResponse, TenantCreateRequest, TenantUpdateRequest,
     UserResponse, UserCreateRequest, UserUpdateRequest
 )
-from djen.api.app import get_database
+from djen.api.database import get_database
 
 log = logging.getLogger("captacao.users")
 

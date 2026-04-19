@@ -3,7 +3,7 @@ import hashlib
 import json
 import traceback
 from typing import Optional, Any
-from djen.api.app import get_database
+from djen.api.database import get_database
 
 log = logging.getLogger("captacao.audit")
 

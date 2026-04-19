@@ -4,7 +4,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
 from djen.api.auth import get_current_user, require_role, UserInDB
-from djen.api.app import get_database
+from djen.api.database import get_database
 
 log = logging.getLogger("captacao.routers.errors")
 

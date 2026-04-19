@@ -5,7 +5,7 @@ from djen.api.auth import get_current_user, require_role, require_master_or_tena
 from djen.api.schemas import (
     FunctionCostResponse, FunctionCostUpdateRequest, UsageLogResponse, BillingStatsResponse
 )
-from djen.api.app import get_database
+from djen.api.database import get_database
 
 log = logging.getLogger("captacao.billing")
 

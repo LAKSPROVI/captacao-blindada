@@ -89,7 +89,7 @@ class UserCreate(BaseModel):
 # Database Helpers
 # ---------------------------------------------------------------------------
 def _get_db():
-    from djen.api.app import get_database
+    from djen.api.database import get_database
     return get_database()
 
 def _init_default_admin() -> None:

@@ -20,7 +20,7 @@ from typing import Optional
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from djen.api.database import Database
+from djen.api.database import get_database, Database
 from djen.api.schemas import APIInfoResponse
 import traceback
 from fastapi import Request
@@ -31,7 +31,6 @@ from djen.api.audit import registrar_erro_sistema
 # Globals
 # =========================================================================
 _start_time = time.time()
-_database: Optional[Database] = None
 _scheduler = None  # APScheduler (lazy init)
 
 # Logging
@@ -41,12 +40,6 @@ logging.basicConfig(
 )
 log = logging.getLogger("captacao")
 
-
-def get_database() -> Database:
-    global _database
-    if _database is None:
-        _database = Database()
-    return _database
 
 
 # =========================================================================

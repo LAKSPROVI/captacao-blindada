@@ -13,7 +13,7 @@ router = APIRouter(prefix="/api/settings", tags=["Configuracoes"])
 
 
 def get_db() -> Database:
-    from djen.api.app import get_database
+    from djen.api.database import get_database
     return get_database()
 
 
