@@ -167,7 +167,7 @@ export default function ProcessoDetailPage() {
                 <p className="text-xs text-[var(--muted-foreground)]">Valor da Causa</p>
                 <p className="text-sm font-bold text-legal-600">
                   {processo.valor_causa 
-                    ? new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(processo.valor_causa)
+                    ? new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(processo.valor_causa as any)
                     : "Não informado"}
                 </p>
               </div>
