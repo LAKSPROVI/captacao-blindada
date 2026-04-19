@@ -268,30 +268,30 @@ export default function CaptacaoPage() {
       {/* Stats */}
       {stats && (
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
-          <span title="Captacoes Ativas"><StatsCard
-           
+          <StatsCard
+            title="Captacoes Ativas"
             value={stats.captacoes_ativas}
             icon={Zap}
             description={`${stats.total_captacoes} total`}
-          /></span>
-          <span title="Execucoes Hoje"><StatsCard
-           
+          />
+          <StatsCard
+            title="Execucoes Hoje"
             value={stats.execucoes_hoje}
             icon={Activity}
             description={`${stats.total_execucoes} total`}
-          /></span>
-          <span title="Novos Encontrados"><StatsCard
-           
+          />
+          <StatsCard
+            title="Novos Encontrados"
             value={stats.total_novos_encontrados}
             icon={FileText}
             description="Publicacoes novas"
-          /></span>
-          <span title="Ultima Execucao"><StatsCard
-           
+          />
+          <StatsCard
+            title="Ultima Execucao"
             value={stats.ultima_execucao ? new Date(stats.ultima_execucao).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" }) : "--:--"}
             icon={Clock}
             description={stats.ultima_execucao ? new Date(stats.ultima_execucao).toLocaleDateString("pt-BR") : "Nenhuma"}
-          /></span>
+          />
         </div>
       )}
 
