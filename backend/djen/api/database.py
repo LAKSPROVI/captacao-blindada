@@ -323,6 +323,12 @@ class Database:
             -- Configuracoes Globais (v1.4)
             -- =========================================================
 
+            CREATE TABLE IF NOT EXISTS system_settings (
+                key TEXT PRIMARY KEY,
+                value TEXT,
+                updated_at TEXT DEFAULT (datetime('now'))
+            );
+
             -- =========================================================
             -- Historico de Verificacoes (v1.5)
             -- =========================================================

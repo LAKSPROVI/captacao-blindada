@@ -101,7 +101,8 @@ def _init_default_admin() -> None:
         db = _get_db()
         cur = db.conn.execute("SELECT id FROM users LIMIT 1")
         if not cur.fetchone():
-            hashed_pw = hash_password(admin_pass)
+            # Bcrypt has a 72-byte limit for passwords.
+            hashed_pw = hash_password(admin_pass[:72])
             db.conn.execute(
                 "INSERT INTO users (tenant_id, username, hashed_password, full_name, role) VALUES (?, ?, ?, ?, ?)",
                 (1, admin_user, hashed_pw, admin_name, 'master')
