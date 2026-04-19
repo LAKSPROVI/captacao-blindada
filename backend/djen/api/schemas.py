@@ -54,6 +54,13 @@ class TipoBusca(str, Enum):
     todas = "todas"
 
 
+class PrioridadeCaptacao(str, Enum):
+    baixa = "baixa"
+    normal = "normal"
+    alta = "alta"
+    urgente = "urgente"
+
+
 # =========================================================================
 # Request Models
 # =========================================================================
