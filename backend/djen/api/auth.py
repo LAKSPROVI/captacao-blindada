@@ -14,7 +14,7 @@ from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
 from jose import JWTError, jwt
 from passlib.context import CryptContext
 from pydantic import BaseModel
-from fastlite import Database
+from djen.api.database import get_database, Database
 
 from djen.api.audit import registrar_auditoria
 
@@ -89,7 +89,6 @@ class UserCreate(BaseModel):
 # Database Helpers
 # ---------------------------------------------------------------------------
 def _get_db():
-    from djen.api.database import get_database
     return get_database()
 
 def _init_default_admin() -> None:
