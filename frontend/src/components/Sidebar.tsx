@@ -15,9 +15,11 @@ import {
   Sun,
   ChevronLeft,
   ChevronRight,
-  User,
-  Zap,
-  Brain,
+  CreditCard,
+  Users,
+  Settings,
+  ShieldCheck,
+  AlertTriangle,
 } from "lucide-react";
 import { useState, useEffect } from "react";
 
@@ -117,6 +119,98 @@ export function Sidebar() {
             </div>
           );
         })}
+        {user && (user.role === "master" || user.role === "tenant_admin") && (
+          <>
+            <div className="pt-4 pb-1 px-3">
+              {!collapsed && <p className="text-xs font-semibold text-[var(--muted-foreground)] uppercase tracking-wider">Administração</p>}
+              {collapsed && <div className="h-px w-full bg-border my-2" />}
+            </div>
+            
+            <div key="/admin/tarifacao">
+              <Link
+                href="/admin/tarifacao"
+                className={cn(
+                  "flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-colors",
+                  pathname.startsWith("/admin/tarifacao")
+                    ? "bg-legal-600 text-white shadow-sm"
+                    : "text-[var(--muted-foreground)] hover:bg-[var(--secondary)] hover:text-[var(--foreground)]"
+                )}
+                title={collapsed ? "Tarifação" : undefined}
+              >
+                <CreditCard className="h-5 w-5 shrink-0" />
+                {!collapsed && <span>Tarifação</span>}
+              </Link>
+            </div>
+            
+            <div key="/admin/usuarios">
+              <Link
+                href="/admin/usuarios"
+                className={cn(
+                  "flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-colors",
+                  pathname.startsWith("/admin/usuarios")
+                    ? "bg-legal-600 text-white shadow-sm"
+                    : "text-[var(--muted-foreground)] hover:bg-[var(--secondary)] hover:text-[var(--foreground)]"
+                )}
+                title={collapsed ? "Usuários" : undefined}
+              >
+                <Users className="h-5 w-5 shrink-0" />
+                {!collapsed && <span>Usuários</span>}
+              </Link>
+            </div>
+
+            {user.role === "master" && (
+              <>
+                <div key="/admin/tenants">
+                  <Link
+                    href="/admin/tenants"
+                    className={cn(
+                      "flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-colors",
+                      pathname.startsWith("/admin/tenants")
+                        ? "bg-legal-600 text-white shadow-sm"
+                        : "text-[var(--muted-foreground)] hover:bg-[var(--secondary)] hover:text-[var(--foreground)]"
+                    )}
+                    title={collapsed ? "Cadastros / Tenants" : undefined}
+                  >
+                    <Settings className="h-5 w-5 shrink-0" />
+                    {!collapsed && <span>Cadastros</span>}
+                  </Link>
+                </div>
+
+                <div key="/admin/auditoria">
+                  <Link
+                    href="/admin/auditoria"
+                    className={cn(
+                      "flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-colors",
+                      pathname.startsWith("/admin/auditoria")
+                        ? "bg-legal-600 text-white shadow-sm"
+                        : "text-[var(--muted-foreground)] hover:bg-[var(--secondary)] hover:text-[var(--foreground)]"
+                    )}
+                    title={collapsed ? "Cadeia de Custódia" : undefined}
+                  >
+                    <ShieldCheck className="h-5 w-5 shrink-0" />
+                    {!collapsed && <span>Cadeia de Custódia</span>}
+                  </Link>
+                </div>
+
+                <div key="/admin/erros">
+                  <Link
+                    href="/admin/erros"
+                    className={cn(
+                      "flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-colors",
+                      pathname.startsWith("/admin/erros")
+                        ? "bg-red-600 text-white shadow-sm"
+                        : "text-[var(--muted-foreground)] hover:bg-[var(--secondary)] hover:text-[var(--foreground)]"
+                    )}
+                    title={collapsed ? "System Errors" : undefined}
+                  >
+                    <AlertTriangle className={cn("h-5 w-5 shrink-0", !pathname.startsWith("/admin/erros") && "text-red-500")} />
+                    {!collapsed && <span className={cn(!pathname.startsWith("/admin/erros") && "text-red-500 font-semibold")}>Erros do Sistema</span>}
+                  </Link>
+                </div>
+              </>
+            )}
+          </>
+        )}
       </nav>
 
       {/* Bottom section */}
@@ -151,7 +245,10 @@ export function Sidebar() {
                 <p className="text-sm font-medium text-[var(--card-foreground)] truncate">
                   {user.full_name || user.username}
                 </p>
-                <p className="text-xs text-[var(--muted-foreground)] truncate">
+                <p className="text-xs text-[var(--muted-foreground)] truncate uppercase font-semibold text-legal-500">
+                  {user.role}
+                </p>
+                <p className="text-[10px] text-[var(--muted-foreground)] truncate">
                   {user.email || user.username}
                 </p>
               </div>

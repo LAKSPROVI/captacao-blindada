@@ -412,6 +412,69 @@ class CaptacaoStatsResponse(BaseModel):
     total_novos_encontrados: int = 0
     ultima_execucao: Optional[str] = None
     por_tipo: Dict[str, int] = {}
-    por_prioridade: Dict[str, int] = {}
+# =========================================================================
+# Multi-Tenant, Usuários e Tarifação - Request/Response Models
+# =========================================================================
 
+class TenantResponse(BaseModel):
+    id: int
+    nome: str
+    ativo: bool
+    saldo_tokens: int
+    criado_em: Optional[str] = None
+    atualizado_em: Optional[str] = None
 
+class TenantCreateRequest(BaseModel):
+    nome: str = Field(..., min_length=2)
+    ativo: bool = True
+    saldo_tokens: int = 0
+
+class TenantUpdateRequest(BaseModel):
+    nome: Optional[str] = None
+    ativo: Optional[bool] = None
+    saldo_tokens: Optional[int] = None
+
+class UserResponse(BaseModel):
+    id: int
+    tenant_id: Optional[int] = None
+    username: str
+    full_name: str
+    role: str
+    criado_em: Optional[str] = None
+
+class UserCreateRequest(BaseModel):
+    tenant_id: Optional[int] = None
+    username: str
+    password: str
+    full_name: str
+    role: str = "viewer"
+
+class UserUpdateRequest(BaseModel):
+    full_name: Optional[str] = None
+    password: Optional[str] = None
+    role: Optional[str] = None
+    tenant_id: Optional[int] = None
+
+class FunctionCostResponse(BaseModel):
+    function_name: str
+    description: Optional[str] = None
+    cost_tokens: int
+
+class FunctionCostUpdateRequest(BaseModel):
+    description: Optional[str] = None
+    cost_tokens: Optional[int] = None
+
+class UsageLogResponse(BaseModel):
+    id: int
+    tenant_id: int
+    user_id: Optional[int] = None
+    function_name: str
+    tokens_used: int
+    metadata: Optional[str] = None
+    data_uso: str
+
+class BillingStatsResponse(BaseModel):
+    tenant_id: int
+    saldo_atual: int
+    total_gasto_mes: int
+    gasto_por_funcao: Dict[str, int]

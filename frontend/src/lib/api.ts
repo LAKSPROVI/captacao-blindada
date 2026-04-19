@@ -6,10 +6,12 @@ export interface LoginResponse {
 }
 
 export interface UserInfo {
+  id?: number;
   username: string;
   email?: string;
   full_name?: string;
-  roles?: string[];
+  role?: string;
+  tenant_id?: number;
 }
 
 export interface ProcessoAnalise {
@@ -645,6 +647,88 @@ class ApiClient {
 
   async updateSetting(key: string, value: any): Promise<{ status: string }> {
     const { data } = await this.client.post<{ status: string }>("/settings", { key, value });
+    return data;
+  }
+
+  // ==========================================
+  // Admin & Billing
+  // ==========================================
+
+  async getTenants(): Promise<any[]> {
+    const { data } = await this.client.get("/admin/tenants");
+    return data;
+  }
+  
+  async createTenant(tenantData: any): Promise<any> {
+    const { data } = await this.client.post("/admin/tenants", tenantData);
+    return data;
+  }
+
+  async updateTenant(id: number, tenantData: any): Promise<any> {
+    const { data } = await this.client.put(`/admin/tenants/${id}`, tenantData);
+    return data;
+  }
+
+  async getUsers(): Promise<any[]> {
+    const { data } = await this.client.get("/admin/users");
+    return data;
+  }
+
+  async createUser(userData: any): Promise<any> {
+    const { data } = await this.client.post("/auth/register", userData);
+    return data;
+  }
+
+  async updateUser(id: number, userData: any): Promise<any> {
+    const { data } = await this.client.put(`/admin/users/${id}`, userData);
+    return data;
+  }
+
+  async deleteUser(id: number): Promise<void> {
+    await this.client.delete(`/admin/users/${id}`);
+  }
+
+  async getBillingStats(): Promise<any> {
+    const { data } = await this.client.get("/billing/stats");
+    return data;
+  }
+
+  async getFunctionCosts(): Promise<any[]> {
+    const { data } = await this.client.get("/billing/costs");
+    return data;
+  }
+
+  async updateFunctionCost(function_name: string, costData: any): Promise<any> {
+    const { data } = await this.client.put(`/billing/costs/${function_name}`, costData);
+    return data;
+  }
+
+  async getUsageLogs(limit = 100, offset = 0): Promise<any[]> {
+    const { data } = await this.client.get("/billing/usage", { params: { limit, offset } });
+    return data;
+  }
+
+  // ==========================================
+  // Custodia & Sistema
+  // ==========================================
+
+  async getAuditLogs(limit = 100, offset = 0): Promise<any[]> {
+    const { data } = await this.client.get("/audit/logs", { params: { limit, offset } });
+    return data;
+  }
+
+  async verifyAuditChain(): Promise<{status: string, message: string, erros?: any[]}> {
+    const { data } = await this.client.get("/audit/verify");
+    return data;
+  }
+
+  async getSystemErrors(status: string = "aberto", limit = 100, offset = 0): Promise<any[]> {
+    const { data } = await this.client.get("/errors", { params: { status, limit, offset } });
+    return data;
+  }
+
+  async resolveSystemError(errorId: number): Promise<any> {
+    const { data } = await this.client.post(`/errors/${errorId}/resolve`);
     return data;
   }
 }

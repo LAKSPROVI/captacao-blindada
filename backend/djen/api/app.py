@@ -22,6 +22,10 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from djen.api.database import Database
 from djen.api.schemas import APIInfoResponse
+import traceback
+from fastapi import Request
+from fastapi.responses import JSONResponse
+from djen.api.audit import registrar_erro_sistema
 
 # =========================================================================
 # Globals
@@ -60,6 +64,7 @@ def _run_monitor_cycle():
             log.info("[Scheduler] DJEN: %d monitoramentos executados", len(results))
     except Exception as e:
         log.error("[Scheduler] Erro no ciclo DJEN: %s", e)
+        registrar_erro_sistema("scheduler._run_monitor_cycle", type(e).__name__, str(e), traceback.format_exc())
 
 
 def _run_processos_datajud_cycle(limite: int = 50):
@@ -125,6 +130,7 @@ def _run_processos_datajud_cycle(limite: int = 50):
 
     except Exception as e:
         log.error("[Scheduler] Erro no ciclo de processos: %s", e)
+        registrar_erro_sistema("scheduler._run_processos_datajud_cycle", type(e).__name__, str(e), traceback.format_exc())
         return {"status": "error", "message": str(e)}
 
 
@@ -139,6 +145,7 @@ def _run_captacao_scheduler():
             log.info("[Scheduler] Captacao: %d captacoes executadas", total)
     except Exception as e:
         log.error("[Scheduler] Erro no ciclo de captacao: %s", e)
+        registrar_erro_sistema("scheduler._run_captacao_scheduler", type(e).__name__, str(e), traceback.format_exc())
 
 
 def start_scheduler():
@@ -276,6 +283,31 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# Global Error Handler
+@app.exception_handler(Exception)
+async def global_exception_handler(request: Request, exc: Exception):
+    stack = traceback.format_exc()
+    error_msg = str(exc)
+    error_type = type(exc).__name__
+    
+    log.error(f"Global exception caught for {request.url.path}: {error_type} - {error_msg}")
+    
+    # Tentativa basica de pegar tenant e user. Normalmente via token, mas falhando as vezes eh apenas app start
+    # Sem middleware complexo, deixamos None para requests quebradas
+    registrar_erro_sistema(
+        function_name=f"{request.method} {request.url.path}",
+        error_type=error_type,
+        error_message=error_msg,
+        stack_trace=stack,
+        tenant_id=None,
+        user_id=None
+    )
+    
+    return JSONResponse(
+        status_code=500,
+        content={"detail": "Erro interno no servidor. O fato foi devidamente reportado para correcao."}
+    )
+
 # =========================================================================
 # Routers
 # =========================================================================
@@ -290,6 +322,10 @@ from djen.api.routers.captacao import router as captacao_router
 from djen.api.routers.processos_monitor import router as processos_monitor_router
 from djen.api.routers.ai_config import router as ai_config_router
 from djen.api.routers.settings import router as settings_router
+from djen.api.routers.users import router as users_router
+from djen.api.routers.billing import router as billing_router
+from djen.api.routers.audit import router as audit_router
+from djen.api.routers.errors import router as errors_router
 
 # Auth router (public endpoints: login, etc.)
 app.include_router(auth_router)
@@ -304,6 +340,10 @@ app.include_router(captacao_router)
 app.include_router(processos_monitor_router)
 app.include_router(ai_config_router)
 app.include_router(settings_router)
+app.include_router(users_router)
+app.include_router(billing_router)
+app.include_router(audit_router)
+app.include_router(errors_router)
 
 
 # =========================================================================

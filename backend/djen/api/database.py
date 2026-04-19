@@ -101,6 +101,90 @@ class Database:
                 criado_em TEXT DEFAULT (datetime('now'))
             );
 
+            -- =========================================================
+            -- Multi-Tenant & Identidade Estrutura (v2.0)
+            -- =========================================================
+
+            CREATE TABLE IF NOT EXISTS tenants (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                nome TEXT NOT NULL,
+                ativo INTEGER DEFAULT 1,
+                saldo_tokens INTEGER DEFAULT 0,
+                criado_em TEXT DEFAULT (datetime('now')),
+                atualizado_em TEXT DEFAULT (datetime('now'))
+            );
+
+            CREATE TABLE IF NOT EXISTS users (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                tenant_id INTEGER NULL,
+                username TEXT UNIQUE NOT NULL,
+                hashed_password TEXT NOT NULL,
+                full_name TEXT NOT NULL,
+                role TEXT NOT NULL DEFAULT 'viewer',
+                criado_em TEXT DEFAULT (datetime('now')),
+                FOREIGN KEY (tenant_id) REFERENCES tenants(id)
+            );
+
+            CREATE TABLE IF NOT EXISTS function_costs (
+                function_name TEXT PRIMARY KEY,
+                description TEXT,
+                cost_tokens INTEGER DEFAULT 0,
+                atualizado_em TEXT DEFAULT (datetime('now'))
+            );
+
+            CREATE TABLE IF NOT EXISTS usage_logs (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                tenant_id INTEGER NOT NULL,
+                user_id INTEGER,
+                function_name TEXT NOT NULL,
+                tokens_used INTEGER DEFAULT 0,
+                metadata TEXT,
+                data_uso TEXT DEFAULT (datetime('now')),
+                FOREIGN KEY (tenant_id) REFERENCES tenants(id),
+                FOREIGN KEY (user_id) REFERENCES users(id)
+            );
+
+            -- Indexes for the new tables
+            CREATE INDEX IF NOT EXISTS idx_users_tenant_id ON users(tenant_id);
+            CREATE INDEX IF NOT EXISTS idx_users_username ON users(username);
+            CREATE INDEX IF NOT EXISTS idx_usage_logs_tenant_id ON usage_logs(tenant_id);
+            CREATE INDEX IF NOT EXISTS idx_usage_logs_function_name ON usage_logs(function_name);
+
+            CREATE TABLE IF NOT EXISTS audit_logs (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                tenant_id INTEGER NULL,
+                user_id INTEGER NULL,
+                action TEXT NOT NULL,
+                entity_type TEXT NOT NULL,
+                entity_id TEXT,
+                details TEXT,
+                ip_address TEXT,
+                data_hash TEXT NOT NULL,
+                criado_em TEXT DEFAULT (datetime('now')),
+                FOREIGN KEY (tenant_id) REFERENCES tenants(id),
+                FOREIGN KEY (user_id) REFERENCES users(id)
+            );
+
+            CREATE TABLE IF NOT EXISTS system_errors (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                tenant_id INTEGER NULL,
+                user_id INTEGER NULL,
+                function_name TEXT NOT NULL,
+                error_type TEXT NOT NULL,
+                error_message TEXT NOT NULL,
+                stack_trace TEXT,
+                status TEXT DEFAULT 'aberto',
+                resolvido_em TEXT,
+                criado_em TEXT DEFAULT (datetime('now')),
+                FOREIGN KEY (tenant_id) REFERENCES tenants(id),
+                FOREIGN KEY (user_id) REFERENCES users(id)
+            );
+
+            CREATE INDEX IF NOT EXISTS idx_audit_logs_action ON audit_logs(action);
+            CREATE INDEX IF NOT EXISTS idx_system_errors_status ON system_errors(status);
+
+
+
             CREATE INDEX IF NOT EXISTS idx_publicacoes_fonte ON publicacoes(fonte);
             CREATE INDEX IF NOT EXISTS idx_publicacoes_tribunal ON publicacoes(tribunal);
             CREATE INDEX IF NOT EXISTS idx_publicacoes_processo ON publicacoes(numero_processo);
@@ -274,6 +358,35 @@ class Database:
                 conn.commit()
             except Exception:
                 pass  # Coluna ja existe
+
+        # --- Migration: adicionar tenant_id em varias tabelas (v2.0) ---
+        tabelas_tenant = [
+            "monitorados", "publicacoes", "buscas", "captacoes",
+            "execucoes_captacao", "processos_monitorados"
+        ]
+        for tabela in tabelas_tenant:
+            try:
+                conn.execute(f"ALTER TABLE {tabela} ADD COLUMN tenant_id INTEGER")
+                conn.commit()
+            except Exception:
+                pass  # Coluna ja existe
+        
+        # Opcional: Atualizar registros antigos para tenant_id = 1
+        for tabela in tabelas_tenant:
+            try:
+                conn.execute(f"UPDATE {tabela} SET tenant_id = 1 WHERE tenant_id IS NULL")
+                conn.commit()
+            except Exception:
+                pass
+        
+        # Garantir Default Tenant (Admin)
+        try:
+            cur = conn.execute("SELECT id FROM tenants WHERE id=1")
+            if not cur.fetchone():
+                conn.execute("INSERT INTO tenants (id, nome, ativo, saldo_tokens) VALUES (1, 'Sistema Root', 1, 1000000)")
+                conn.commit()
+        except Exception as e:
+            log.error(f"Erro ao criar tenant admin: {e}")
 
         conn.close()
         log.info("[Database] Schema inicializado em %s", self.db_path)
