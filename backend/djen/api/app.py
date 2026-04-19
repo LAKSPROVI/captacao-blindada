@@ -225,6 +225,14 @@ async def lifespan(app: FastAPI):
     get_database()
     log.info("[Startup] Database inicializado")
 
+    # Init default admin (safe inside lifespan)
+    try:
+        from djen.api.auth import _init_default_admin
+        _init_default_admin()
+        log.info("[Startup] Admin default inicializado")
+    except Exception as e:
+        log.error("[Startup] Erro ao inicializar admin: %s", e)
+
     # Init scheduler
     start_scheduler()
 

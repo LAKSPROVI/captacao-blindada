@@ -199,7 +199,6 @@ def require_master_or_tenant_admin():
     return require_role("master", "tenant_admin")
 
 # Inicializa o default admin
-_init_default_admin()
 
 
 # ---------------------------------------------------------------------------
