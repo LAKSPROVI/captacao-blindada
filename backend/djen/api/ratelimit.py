@@ -78,7 +78,6 @@ limiter = Limiter(
     default_limits=[RATE_LIMITS["default"]],
     storage_uri="memory://",
     strategy="fixed-window",
-    check_from_request=True,
 )
 
 
