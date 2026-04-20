@@ -10,7 +10,6 @@ from typing import Dict, Optional, List
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 from collections import defaultdict
-import statsd  # prometheus-client style (sem dependência externa)
 
 log = logging.getLogger("captacao.metrics")
 
