@@ -105,3 +105,32 @@ def health_check_completo():
         database=db_status,
         scheduler=sched_status,
     )
+
+
+@router.get("/api/health/circuits", summary="Status dos Circuit Breakers")
+def health_circuits():
+    """
+    Retorna o status de todos os Circuit Breakers.
+    """
+    from djen.api.circuitbreaker import get_all_circuits, reset_all_circuits
+    
+    circuits = get_all_circuits()
+    status = {
+        name: cb.get_status()
+        for name, cb in circuits.items()
+    }
+    
+    return {
+        "status": "success",
+        "total": len(status),
+        "circuits": status,
+    }
+
+
+@router.post("/api/health/circuits/reset", summary="Resetar todos os Circuit Breakers")
+def reset_circuits():
+    """Reseta todos os Circuit Breakers (use com cautela)."""
+    from djen.api.circuitbreaker import reset_all_circuits
+    
+    reset_all_circuits()
+    return {"status": "success", "message": "Todos os circuits foram resetados"}

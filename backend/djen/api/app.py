@@ -27,6 +27,9 @@ from fastapi import Request
 from fastapi.responses import JSONResponse
 from djen.api.audit import registrar_erro_sistema
 
+# Rate Limiter
+from djen.api.ratelimit import limiter
+
 # =========================================================================
 # Globals
 # =========================================================================
@@ -284,6 +287,56 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# Metrics Middleware
+from starlette.middleware.base import BaseHTTPMiddleware
+from djen.api.metrics import get_metrics
+
+class MetricsMiddleware(BaseHTTPMiddleware):
+    async def dispatch(self, request, call_next):
+        start = time.time()
+        try:
+            response = await call_next(request)
+            get_metrics().increment_requests()
+            get_metrics().increment_requests_endpoint(request.url.path)
+            return response
+        except Exception as e:
+            get_metrics().increment_errors(type(e).__name__)
+            raise
+        finally:
+            duration = (time.time() - start) * 1000
+            get_metrics().record_duration(duration)
+
+app.add_middleware(MetricsMiddleware)
+
+# Rate Limiter
+app.state.limiter = limiter
+app.add_exception_handler(limiter._on_error, limiter._rate_limit_exceeded)
+
+# Global Error Handler
+@app.exception_handler(Exception)
+async def global_exception_handler(request: Request, exc: Exception):
+    stack = traceback.format_exc()
+    error_msg = str(exc)
+    error_type = type(exc).__name__
+    
+    log.error(f"Global exception caught for {request.url.path}: {error_type} - {error_msg}")
+    
+    # Tentativa basica de pegar tenant e user. Normally via token, but failing sometimes is just app start
+    # Without complex middleware, we leave None for broken requests
+    registrar_erro_sistema(
+        function_name=f"{request.method} {request.url.path}",
+        error_type=error_type,
+        error_message=error_msg,
+        stack_trace=stack,
+        tenant_id=None,
+        user_id=None
+    )
+    
+    return JSONResponse(
+        status_code=500,
+        content={"detail": "Erro interno no servidor. O fato foi devidamente reportado para correcao."}
+    )
+
 # Global Error Handler
 @app.exception_handler(Exception)
 async def global_exception_handler(request: Request, exc: Exception):
@@ -327,9 +380,25 @@ from djen.api.routers.users import router as users_router
 from djen.api.routers.billing import router as billing_router
 from djen.api.routers.audit import router as audit_router
 from djen.api.routers.errors import router as errors_router
+from djen.api.routers.validation import router as validation_router
+from djen.api.routers.webhooks import router as webhooks_router
+from djen.api.routers.metrics import router as metrics_router
+from djen.api.routers.advanced import router as advanced_router
 
 # Auth router (public endpoints: login, etc.)
 app.include_router(auth_router)
+
+# Validation router
+app.include_router(validation_router)
+
+# Webhooks router
+app.include_router(webhooks_router)
+
+# Metrics router
+app.include_router(metrics_router)
+
+# Advanced configs router
+app.include_router(advanced_router)
 
 # Protected routers
 app.include_router(datajud_router)

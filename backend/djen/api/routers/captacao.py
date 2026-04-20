@@ -7,9 +7,13 @@ automatizadas de informacoes do DataJud e DJEN.
 
 import asyncio
 import logging
-from typing import Optional, List
+import time
+from datetime import datetime, timedelta
+from functools import lru_cache
+from typing import Optional, List, Dict, Any
 
-from fastapi import APIRouter, HTTPException, Query, WebSocket, WebSocketDisconnect
+from fastapi import APIRouter, HTTPException, Query, WebSocket, WebSocketDisconnect, Request
+from pydantic import BaseModel, Field
 
 from djen.api.schemas import (
     CaptacaoCreateRequest,
@@ -22,9 +26,35 @@ from djen.api.schemas import (
     DiffResponse,
 )
 
+from djen.api.schemas import (
+    CaptacaoCreateRequest,
+    CaptacaoUpdateRequest,
+    CaptacaoPreviewRequest,
+    CaptacaoResponse,
+    ExecucaoCaptacaoResponse,
+    CaptacaoStatsResponse,
+    PublicacaoResponse,
+    DiffResponse,
+)
+from djen.api.ratelimit import limiter
+
 log = logging.getLogger("captacao.api.captacao")
 
 router = APIRouter(prefix="/api/captacao", tags=["Captacao Automatizada"])
+
+DEFAULT_LIMIT = 100
+MAX_LIMIT = 500
+HISTORICO_LIMIT = 100
+CACHE_TTL_SECONDS = 300
+
+_cached_db = None
+_cached_service = None
+
+_captacao_list_cache: Dict[str, Any] = {
+    "data": None,
+    "timestamp": 0,
+    "filters": None
+}
 
 
 # =========================================================================
@@ -32,13 +62,30 @@ router = APIRouter(prefix="/api/captacao", tags=["Captacao Automatizada"])
 # =========================================================================
 
 def get_db():
-    from djen.api.database import get_database
-    return get_database()
+    global _cached_db
+    if _cached_db is None:
+        from djen.api.database import get_database
+        _cached_db = get_database()
+    return _cached_db
 
 
 def get_service():
-    from djen.agents.captacao_service import get_captacao_service
-    return get_captacao_service()
+    global _cached_service
+    if _cached_service is None:
+        from djen.agents.captacao_service import get_captacao_service
+        _cached_service = get_captacao_service()
+    return _cached_service
+
+
+def _get_filter_key(ativo: Optional[bool], tipo_busca: Optional[str], prioridade: Optional[str]) -> str:
+    return f"{ativo}:{tipo_busca}:{prioridade}"
+
+
+def _is_cache_valid(filters_key: str) -> bool:
+    now = time.time()
+    return (_captacao_list_cache["data"] is not None and
+            _captacao_list_cache["filters"] == filters_key and
+            now - _captacao_list_cache["timestamp"] < CACHE_TTL_SECONDS)
 
 
 # =========================================================================
@@ -57,11 +104,35 @@ def listar_captacoes(
     ativo: Optional[bool] = Query(None, description="Filtrar por ativo/inativo"),
     tipo_busca: Optional[str] = Query(None, description="Filtrar por tipo"),
     prioridade: Optional[str] = Query(None, description="Filtrar por prioridade"),
+    limit: int = Query(DEFAULT_LIMIT, ge=1, le=MAX_LIMIT, description="Limite de resultados"),
+    offset: int = Query(0, ge=0, description="Offset para paginacao"),
+    no_cache: bool = Query(False, description="Ignorar cache"),
 ):
-    """Lista todas as captacoes configuradas."""
+    """Lista todas as captacoes configuradas com cache em memória."""
     db = get_db()
-    captacoes = db.listar_captacoes(ativo=ativo, tipo_busca=tipo_busca, prioridade=prioridade)
-    return {"status": "success", "total": len(captacoes), "captacoes": captacoes}
+    filters_key = _get_filter_key(ativo, tipo_busca, prioridade)
+    
+    if no_cache or not _is_cache_valid(filters_key):
+        captacoes = db.listar_captacoes(ativo=ativo, tipo_busca=tipo_busca, prioridade=prioridade)
+        _captacao_list_cache["data"] = captacoes
+        _captacao_list_cache["filters"] = filters_key
+        _captacao_list_cache["timestamp"] = time.time()
+    
+    all_captacoes = _captacao_list_cache["data"]
+    total = len(all_captacoes)
+    has_more = (offset + limit) < total
+    next_offset = offset + limit if has_more else None
+    paginated = all_captacoes[offset:offset + limit]
+    
+    return {
+        "status": "success",
+        "total": total,
+        "limit": limit,
+        "offset": offset,
+        "has_more": has_more,
+        "next_offset": next_offset,
+        "captacoes": paginated
+    }
 
 
 @router.post("/criar", summary="Criar nova captacao")
@@ -132,10 +203,69 @@ def preview_captacao(req: CaptacaoPreviewRequest):
 
 
 @router.post("/executar-todas", summary="Executar todas as captacoes pendentes")
-def executar_todas():
+@limiter.limit("5/minute")
+def executar_todas(request: Request):
     """Executa todas as captacoes ativas cujo horario/dia permite."""
     service = get_service()
     return service.executar_todas()
+
+
+# =========================================================================
+# Relatorio Discreto (_ONLY_ADMIN)
+# =========================================================================
+
+@router.get("/resumo", summary="Relatorio compacto do sistema")
+def relatorio_sistema():
+    """
+    Relatorio discreto para acompanhamento do sistema.
+    Retorna apenas numeros essenciais para verificacao rapida.
+    """
+    db = get_db()
+    
+    stats_gerais = db.obter_stats_captacao()
+    
+    captacoes_ativas = db.conn.execute(
+        "SELECT COUNT(*) as c FROM captacoes WHERE ativo = 1"
+    ).fetchone()["c"]
+    
+    execucoes_hoje = db.conn.execute(
+        """SELECT COUNT(*) as c FROM execucoes_captacao 
+           WHERE date(inicio) = date('now') AND status = 'completed'"""
+    ).fetchone()["c"]
+    
+    resultados_hoje = db.conn.execute(
+        """SELECT COALESCE(SUM(novos_resultados), 0) as t FROM execucoes_captacao 
+           WHERE date(inicio) = date('now')"""
+    ).fetchone()["t"]
+    
+    ultimas_execucoes = db.conn.execute(
+        """SELECT e.id, e.captacao_id, e.inicio, e.status, e.total_resultados, e.novos_resultados, c.nome
+           FROM execucoes_captacao e
+           JOIN captacoes c ON e.captacao_id = c.id
+           ORDER BY e.inicio DESC
+           LIMIT 10"""
+    ).fetchall()
+    
+    captacoes_problema = db.conn.execute(
+        """SELECT c.id, c.nome, c.ultima_execucao, c.total_execucoes, c.total_novos
+           FROM captacoes c
+           WHERE c.ativo = 1 AND (
+               c.ultima_execucao IS NULL OR 
+               c.ultima_execucao < datetime('now', '-24 hours')
+           )
+           ORDER BY c.ultima_execucao ASC
+           LIMIT 10"""
+    ).fetchall()
+    
+    return {
+        "data": datetime.now().isoformat(),
+        "captacoes_ativas": captacoes_ativas,
+        "execucoes_hoje": execucoes_hoje,
+        "resultados_hoje": resultados_hoje,
+        "total_novos_all": stats_gerais.get("total_novos_encontrados", 0),
+        "ultimas": [dict(e) for e in ultimas_execucoes],
+        "pendentes": [dict(c) for c in captacoes_problema] if captacoes_problema else []
+    }
 
 
 # =========================================================================
@@ -221,13 +351,17 @@ def retomar_captacao(captacao_id: int):
 @router.get("/{captacao_id}/historico", summary="Historico de execucoes")
 def historico_captacao(
     captacao_id: int,
-    limite: int = Query(1000000, ge=1, le=1000000),
+    limite: int = Query(HISTORICO_LIMIT, ge=1, le=MAX_LIMIT),
     offset: int = Query(0, ge=0),
 ):
     """Lista historico de execucoes de uma captacao."""
     db = get_db()
     execucoes = db.listar_execucoes_captacao(captacao_id, limite=limite, offset=offset)
-    return {"status": "success", "total": len(execucoes), "execucoes": execucoes}
+    total = db.conn.execute(
+        "SELECT COUNT(*) as c FROM execucoes_captacao WHERE captacao_id = ?",
+        (captacao_id,)
+    ).fetchone()["c"]
+    return {"status": "success", "total": total, "limit": limite, "offset": offset, "execucoes": execucoes}
 
 
 @router.get("/{captacao_id}/resultados", summary="Publicacoes encontradas")

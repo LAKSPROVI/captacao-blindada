@@ -1,0 +1,33 @@
+# =============================================================================
+# Captacao Peticao Blindada - Dockerfile Frontend
+# =============================================================================
+
+FROM node:18-alpine
+
+LABEL maintainer="CAPTAÇÃO BLINDADA"
+LABEL description="Frontend for Captacao Peticao Blindada"
+
+# === Configuracao ===
+WORKDIR /app
+
+# === Copy package files ===
+COPY frontend/package*.json /app/
+
+# === Install Dependencies ===
+RUN npm install
+
+# === Copy Application ===
+COPY frontend/ /app/
+
+# === Environment ===
+ENV NEXT_PUBLIC_API_URL=http://backend:8000
+ENV NODE_ENV=production
+
+# === Build (Opcional - remover se usar .next existente) ===
+# RUN npm run build
+
+# === Expose Port ===
+EXPOSE 3000
+
+# === Start ===
+CMD ["npm", "start"]

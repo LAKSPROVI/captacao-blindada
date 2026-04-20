@@ -27,7 +27,7 @@
                   │    │        │       │
                   │  ┌─┴──┐  ┌─┴──┐    │
                   │  │FE  │  │BE  │    │
-                  │  │3001│  │8001│    │
+                  │  │8010│  │8001│    │
                   │  └────┘  └─┬──┘    │
                   │            │       │
                   │     ┌──────┴──┐    │
@@ -57,7 +57,7 @@
 | Framework | Next.js 15.1.0 + React 19 + TypeScript 5.7 |
 | UI | Tailwind CSS 3.4 + Radix UI + Lucide Icons |
 | HTTP Client | Axios 1.7.9 (ApiClient singleton) |
-| Container | Node 20 Alpine, porta 3001 |
+| Container | Node 20 Alpine, porta 8010 |
 | Build mode | Standalone (next build → standalone output) |
 
 #### Paginas (7 rotas)
@@ -196,7 +196,10 @@
 
 ---
 
-### 2.3 Banco de Dados (SQLite — 7 tabelas)
+### 2.3 Banco de Dados (SQLite — 8 tabelas)
+
+O banco de dados é gerenciado via **Singleton Pattern** em `database.py`.
+A inicialização de tabelas e do administrador padrão ocorre no evento `lifespan` do FastAPI.
 
 ```
 ┌─────────────────┐     ┌──────────────────────┐
@@ -540,7 +543,7 @@ services:
 
   frontend:
     build: Dockerfile.frontend
-    ports: "127.0.0.1:3001:3000"
+    ports: "127.0.0.1:8010:3000"
     depends_on: backend
     environment:
       NEXT_PUBLIC_API_URL: https://captacao.jurislaw.com.br
@@ -557,7 +560,7 @@ Internet → :443 (SSL)
               │
          ┌────┴────────────────────────┐
          │  location / {               │
-         │    proxy_pass :3001;        │  ← Frontend
+         │    proxy_pass :8010;        │  ← Frontend
          │  }                          │
          │                             │
          │  location /api/ {           │

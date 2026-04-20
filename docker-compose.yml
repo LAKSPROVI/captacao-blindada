@@ -20,6 +20,8 @@ services:
     environment:
       - CAPTACAO_DB_PATH=/app/data/captacao_blindada.db
       - PYTHONPATH=/app
+      - IS_PRODUCTION=${IS_PRODUCTION:-false}
+      - JWT_SECRET_KEY=${JWT_SECRET_KEY:-default-dev-key-change-in-production}
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8000/api/health"]
       interval: 30s
@@ -35,9 +37,9 @@ services:
     container_name: captacao-frontend
     restart: unless-stopped
     ports:
-      - "3000:3000"
+      - "${FRONTEND_PORT:-3000}:3000"
     environment:
-      - NEXT_PUBLIC_API_URL=http://backend:8000
+      - NEXT_PUBLIC_API_URL=${NEXT_PUBLIC_API_URL:-http://backend:8000}
     depends_on:
       backend:
         condition: service_healthy

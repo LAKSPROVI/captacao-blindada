@@ -23,6 +23,9 @@ log = logging.getLogger("captacao.api.processo")
 
 router = APIRouter(prefix="/api/processo", tags=["Processo Multi-Agentes"])
 
+DEFAULT_LIMIT = 100
+MAX_LIMIT = 500
+
 
 # =========================================================================
 # Request/Response models
@@ -76,8 +79,8 @@ def cache_stats():
 
 @router.get("/resultados", summary="Listar resultados persistidos")
 def listar_resultados(
-    limit: int = Query(1000000, ge=1, le=1000000, description="Maximo de resultados"),
-    offset: int = Query(0, ge=0, description="Deslocamento para paginacao"),
+    limit: int = Query(DEFAULT_LIMIT, ge=1, le=MAX_LIMIT, description="Limite de resultados"),
+    offset: int = Query(0, ge=0, description="Offset para paginacao"),
     tribunal: Optional[str] = Query(None, description="Filtrar por tribunal"),
     area: Optional[str] = Query(None, description="Filtrar por area juridica"),
     risco: Optional[str] = Query(None, description="Filtrar por nivel de risco"),
@@ -101,7 +104,9 @@ def listar_resultados(
                 "status": "success",
                 "busca": busca,
                 "total": len(resultados),
-                "resultados": resultados,
+                "limit": limit,
+                "offset": offset,
+                "resultados": resultados[offset:offset + limit],
             }
         except Exception as e:
             log.error("Erro na busca textual: %s", e)

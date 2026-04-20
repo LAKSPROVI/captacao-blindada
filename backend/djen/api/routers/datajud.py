@@ -5,25 +5,40 @@ Endpoints para busca de metadados processuais via API publica do CNJ.
 
 import logging
 import time
+import threading
 from typing import Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 
 from djen.api.schemas import BuscaDatajudRequest, BuscaResponse, PublicacaoResponse
 from djen.api.database import Database
 from djen.sources.datajud import DatajudSource
+from djen.api.circuitbreaker import get_circuit, CircuitOpenError, CircuitBreakerConfig
+from djen.api.ratelimit import limiter
+from djen.api.circuitbreaker import get_circuit, CircuitOpenError, CircuitBreakerConfig
 
 log = logging.getLogger("captacao.datajud")
 router = APIRouter(prefix="/api/datajud", tags=["DataJud"])
 
-# Singleton da fonte
+# Circuit Breaker para DataJud
+datajud_config = CircuitBreakerConfig(
+    failures_threshold=5,
+    success_threshold=2,
+    timeout_open=60.0,
+)
+datajud_cb = get_circuit("datajud", datajud_config)
+
+# Singleton thread-safe
 _source: Optional[DatajudSource] = None
+_source_lock = threading.Lock()
 
 
 def get_source() -> DatajudSource:
     global _source
     if _source is None:
-        _source = DatajudSource()
+        with _source_lock:
+            if _source is None:
+                _source = DatajudSource()
     return _source
 
 
@@ -38,15 +53,36 @@ def _to_response(pub) -> PublicacaoResponse:
 
 
 @router.post("/buscar", response_model=BuscaResponse, summary="Busca geral no DataJud")
-def buscar_datajud(req: BuscaDatajudRequest):
+@limiter.limit("30/minute")
+def buscar_datajud(request: Request, req: BuscaDatajudRequest):
     """
     Busca metadados processuais no DataJud (CNJ).
     Retorna informacoes de processos: classe, assuntos, orgao julgador, movimentacoes.
     NAO retorna texto de publicacoes (para isso use o DJEN).
+    
+    Protecao: Circuit Breaker abre apos 5 falhas consecutivas.
     """
     source = get_source()
     db = get_db()
     t0 = time.time()
+
+    # Verificar circuit breaker
+    try:
+        if datajud_cb.state.name == "ABE":
+            raise CircuitOpenError(
+                "DataJud temporariamente indisponivel",
+                retry_after=int(datajud_cb.config.timeout_open)
+            )
+    except CircuitOpenError as e:
+        raise HTTPException(
+            status_code=503,
+            detail={
+                "error": "service_unavailable",
+                "message": "DataJud temporariamente indisponivel",
+                "circuit_breaker": "open",
+                "retry_after": e.retry_after,
+            }
+        )
 
     try:
         resultados = source.buscar(
@@ -59,6 +95,7 @@ def buscar_datajud(req: BuscaDatajudRequest):
             orgao_julgador_codigo=req.orgao_julgador_codigo,
             tamanho=req.tamanho,
         )
+        datajud_cb._on_success()
         elapsed_ms = int((time.time() - t0) * 1000)
 
         # Salvar no banco
@@ -74,7 +111,10 @@ def buscar_datajud(req: BuscaDatajudRequest):
             tempo_ms=elapsed_ms,
             resultados=[_to_response(r) for r in resultados],
         )
+    except CircuitOpenError:
+        raise
     except Exception as e:
+        datajud_cb._on_failure()
         elapsed_ms = int((time.time() - t0) * 1000)
         db.registrar_busca("datajud", "datajud", req.tribunal, req.numero_processo or "",
                            0, "erro", elapsed_ms, str(e))

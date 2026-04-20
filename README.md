@@ -91,9 +91,9 @@ make frontend-dev
 # ou: cd frontend && npm run dev
 
 # Acessar:
-# API:       http://localhost:8000
-# Swagger:   http://localhost:8000/docs
-# Dashboard: http://localhost:3000
+# API:       http://localhost:8001
+# Swagger:   http://localhost:8001/docs
+# Dashboard: http://localhost:8010
 # Login:     admin / admin (mude no .env!)
 ```
 
@@ -129,7 +129,7 @@ captacao-blindada/
 │   │   ├── api/                  # API REST (FastAPI)
 │   │   │   ├── app.py            # App principal + scheduler
 │   │   │   ├── auth.py           # Autenticacao JWT
-│   │   │   ├── database.py       # SQLite WAL thread-safe
+│   │   │   ├── database.py       # SQLite WAL thread-safe (Singleton get_database)
 │   │   │   ├── schemas.py        # Modelos Pydantic (17+ schemas)
 │   │   │   ├── resultado_repository.py  # Persistencia de analises
 │   │   │   └── routers/

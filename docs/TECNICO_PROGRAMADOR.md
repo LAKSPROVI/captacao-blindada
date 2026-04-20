@@ -16,7 +16,7 @@
                   [Nginx Reverse Proxy]
                     /              \
                    /                \
-        :3001 (frontend)     :8001 (backend)
+        :8010 (frontend)     :8001 (backend)
          Next.js 15.1.0       FastAPI + Uvicorn
          React 19.0.0         Python 3.12
          Tailwind CSS 3.4     SQLite WAL
@@ -67,8 +67,8 @@ captacao-blindada/
 │       ├── notifier.py               # Notificacoes WhatsApp + Email
 │       ├── api/
 │       │   ├── app.py                # FastAPI app, lifespan, scheduler, entrypoint
-│       │   ├── auth.py               # JWT auth, user store, endpoints
-│       │   ├── database.py           # SQLite CRUD (7 tabelas, 630 linhas)
+│       │   ├── auth.py               # JWT auth, user store (Admin initialization)
+│       │   ├── database.py           # SQLite WAL thread-safe (Singleton Pattern)
 │       │   ├── schemas.py            # 30+ modelos Pydantic + enums
 │       │   ├── resultado_repository.py # Repositorio de resultados de analise
 │       │   └── routers/
@@ -146,7 +146,8 @@ captacao-blindada/
 
 ### 3.1 Tabelas
 
-O sistema usa SQLite com 7 tabelas. Arquivo em producao: `/app/data/captacao_blindada.db` (Docker volume `captacao-data`).
+O sistema usa SQLite com 8 tabelas. Arquivo em producao: `/app/data/captacao_blindada.db` (Docker volume `captacao-data`).
+A conexão é gerenciada por um **Singleton accessor** em `database.py`, garantindo thread-safety e evitando deadlocks no modo WAL.
 
 #### `monitorados` — Itens monitorados (OAB, processo, advogado, parte)
 | Coluna | Tipo | Restricao | Descricao |
@@ -594,14 +595,14 @@ curl -s -o /dev/null -w '%{http_code}' https://captacao.jurislaw.com.br/
 ### Docker Compose (producao)
 
 - `backend` → container `captacao-backend`, porta 8001:8000
-- `frontend` → container `captacao-frontend`, porta 3001:3000
+- `frontend` → container `captacao-frontend`, porta 8010:3000
 - Volume `captacao-data` → `/app/data/` (persiste SQLite)
 - `.env` com credenciais de producao
 
 ### Nginx
 
 - Reverse proxy em `/etc/nginx/sites-enabled/`
-- `captacao.jurislaw.com.br` → frontend (:3001) + `/api/*` → backend (:8001)
+- `captacao.jurislaw.com.br` → frontend (:8010) + `/api/*` → backend (:8001)
 - `proxy_read_timeout 300s` (configurado para buscas lentas)
 - SSL configurado
 

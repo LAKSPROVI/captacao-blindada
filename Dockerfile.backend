@@ -1,0 +1,38 @@
+# =============================================================================
+# Captacao Peticao Blindada - Dockerfile Backend
+# =============================================================================
+
+FROM python:3.11-slim
+
+LABEL maintainer="CAPTAÇÃO BLINDADA"
+LABEL description="Backend API for Captacao Peticao Blindada"
+
+# === Configuracao ===
+WORKDIR /app
+
+# === Install Dependencies ===
+COPY backend/requirements.txt /app/requirements.txt
+
+RUN pip install --no-cache-dir -r /app/requirements.txt
+
+# === Copy Application ===
+COPY backend/djen /app/djen
+COPY backend/djen/api /app/djen/api
+
+# === Environment ===
+ENV PYTHONPATH=/app
+ENV CAPTACAO_DB_PATH=/app/data/captacao_blindada.db
+ENV IS_PRODUCTION=false
+
+# === Volume ===
+RUN mkdir -p /app/data && chown -R 1000:1000 /app/data || true
+
+# === Expose Port ===
+EXPOSE 8000
+
+# === Health Check ===
+HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=3 \
+    CMD curl -f http://localhost:8000/api/health || exit 1
+
+# === Start ===
+CMD ["uvicorn", "djen.api.app:app", "--host", "0.0.0.0", "--port", "8000"]

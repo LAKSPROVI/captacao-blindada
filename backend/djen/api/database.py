@@ -763,6 +763,7 @@ class Database:
     def salvar_publicacao_captacao(self, pub_dict: Dict, captacao_id: int) -> Optional[int]:
         """Salva publicacao vinculada a uma captacao (sem FK para monitorados)."""
         import json
+        from djen.api.webhook import trigger_webhook, WebhookEvent
         try:
             # Garantir que a coluna captacao_id existe
             try:
@@ -776,7 +777,7 @@ class Database:
                 (hash, fonte, tribunal, data_publicacao, conteudo, numero_processo,
                  classe_processual, orgao_julgador, assuntos, movimentos, url_origem,
                  caderno, pagina, oab_encontradas, advogados, partes, captacao_id)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """, (
                 pub_dict.get("hash", ""),
                 pub_dict.get("fonte", ""),
@@ -797,6 +798,31 @@ class Database:
                 captacao_id,
             ))
             self.conn.commit()
+            
+            # Dispara webhook se nova publicacao
+            if cur.lastrowid:
+                pub_id = cur.lastrowid
+                # Buscar nome da captacao
+                captura = self.obter_captacao(captacao_id)
+                nome_captacao = captura.get("nome", "") if captura else f"Captacao {captacao_id}"
+                
+                # Dispara webhook
+                try:
+                    trigger_webhook(WebhookEvent.NEW_PUBLICATION, {
+                        "id": pub_id,
+                        "numero_processo": pub_dict.get("numero_processo"),
+                        "tribunal": pub_dict.get("tribunal"),
+                        "fonte": pub_dict.get("fonte"),
+                        "tipo_comunicacao": pub_dict.get("tipo_comunicacao", "intimacao"),
+                        "conteudo": pub_dict.get("conteudo", "")[:500],
+                        "data_publicacao": pub_dict.get("data_publicacao"),
+                        "captacao_id": captacao_id,
+                        "captacao_nome": nome_captacao,
+                        "oab_encontradas": pub_dict.get("oab_encontradas", []),
+                    })
+                except Exception as e:
+                    log.error("[Webhook] Erro ao Disparar: %s", e)
+            
             return cur.lastrowid if cur.lastrowid else None
         except Exception as e:
             log.error("[Database] Erro ao salvar publicacao captacao: %s", e)

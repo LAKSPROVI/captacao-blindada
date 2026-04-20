@@ -104,7 +104,7 @@ def atualizar_usuario(user_id: int, user: UserUpdateRequest, current_user: UserI
         vals.append(user.role)
     if user.tenant_id is not None:
         if current_user.role != "master":
-            raise HTTPException(status_code=403, detail="Aspenas master pode mover usuarios entre tenants")
+            raise HTTPException(status_code=403, detail="Apenas master pode mover usuarios entre tenants")
         sets.append("tenant_id = ?")
         vals.append(user.tenant_id)
         

@@ -9,14 +9,15 @@ import os
 from datetime import datetime, timedelta, timezone
 from typing import Optional
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, status, Request
 from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
 from jose import JWTError, jwt
-from passlib.context import CryptContext
+import bcrypt
 from pydantic import BaseModel
 from djen.api.database import get_database, Database
 
 from djen.api.audit import registrar_auditoria
+from djen.api.ratelimit import limiter
 
 log = logging.getLogger("captacao.auth")
 
@@ -24,10 +25,26 @@ log = logging.getLogger("captacao.auth")
 # Configuration
 # ---------------------------------------------------------------------------
 
-SECRET_KEY = os.environ.get(
-    "JWT_SECRET_KEY",
-    "captacao-peticao-blindada-dev-secret-change-in-production",
-)
+_IS_PRODUCTION = os.environ.get("IS_PRODUCTION", "false").lower() in ("true", "1", "yes")
+
+SECRET_KEY = os.environ.get("JWT_SECRET_KEY", None)
+
+if not SECRET_KEY:
+    if _IS_PRODUCTION:
+        log.critical("FATAL: JWT_SECRET_KEY is REQUIRED in production! Set IS_PRODUCTION=true and JWT_SECRET_KEY env var.")
+        raise RuntimeError(
+            "JWT_SECRET_KEY is required in production!\n"
+            "Please set the JWT_SECRET_KEY environment variable.\n"
+            "Example: export JWT_SECRET_KEY='your-secure-key-here'\n"
+            "Or add to .env: JWT_SECRET_KEY=your-secure-key-here"
+        )
+    else:
+        log.warning("JWT_SECRET_KEY not set! Using temporary key for DEVELOPMENT only.")
+        SECRET_KEY = os.environ.get(
+            "DEFAULT_SECRET_KEY",
+            "captacao-blindada-dev-key-CHANGE-IN-PRODUCTION"
+        )
+
 ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_MINUTES = 60
 
@@ -35,7 +52,7 @@ ACCESS_TOKEN_EXPIRE_MINUTES = 60
 # Password hashing
 # ---------------------------------------------------------------------------
 
-pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
+# No longer using passlib.context due to bcrypt compatibility issues
 
 # ---------------------------------------------------------------------------
 # OAuth2 scheme
@@ -92,23 +109,34 @@ def _get_db():
     return get_database()
 
 def _init_default_admin() -> None:
-    """Seed the DB with a default Master admin if no users exist."""
+    """Seed or update the DB with the Master admin from .env."""
     admin_user = os.environ.get("ADMIN_USERNAME", "admin")
     admin_pass = os.environ.get("ADMIN_PASSWORD", "admin")
     admin_name = os.environ.get("ADMIN_FULL_NAME", "Administrador Master")
 
     try:
         db = _get_db()
-        cur = db.conn.execute("SELECT id FROM users LIMIT 1")
-        if not cur.fetchone():
-            # Bcrypt has a 72-byte limit for passwords.
-            hashed_pw = hash_password(admin_pass[:72])
+        hashed_pw = hash_password(admin_pass)
+        
+        # Check if user exists
+        cur = db.conn.execute("SELECT id FROM users WHERE username = ?", (admin_user,))
+        existing = cur.fetchone()
+        
+        if not existing:
             db.conn.execute(
                 "INSERT INTO users (tenant_id, username, hashed_password, full_name, role) VALUES (?, ?, ?, ?, ?)",
                 (1, admin_user, hashed_pw, admin_name, 'master')
             )
-            db.conn.commit()
             log.info("Default master user '%s' created", admin_user)
+        else:
+            # Force update password to match .env
+            db.conn.execute(
+                "UPDATE users SET hashed_password = ?, full_name = ?, role = ? WHERE id = ?", 
+                (hashed_pw, admin_name, 'master', existing[0])
+            )
+            log.info("Default master user '%s' synchronized with .env", admin_user)
+            
+        db.conn.commit()
     except BaseException as e:
         log.error("Could not init default admin: %s", e)
 
@@ -118,11 +146,19 @@ def _init_default_admin() -> None:
 
 
 def verify_password(plain_password: str, hashed_password: str) -> bool:
-    return pwd_context.verify(plain_password, hashed_password)
+    try:
+        return bcrypt.checkpw(
+            plain_password[:72].encode('utf-8'),
+            hashed_password.encode('utf-8')
+        )
+    except Exception:
+        return False
 
 
 def hash_password(password: str) -> str:
-    return pwd_context.hash(password)
+    # Use bcrypt directly
+    salt = bcrypt.gensalt()
+    return bcrypt.hashpw(password[:72].encode('utf-8'), salt).decode('utf-8')
 
 
 def get_user_from_db(username: str) -> Optional[UserInDB]:
@@ -209,7 +245,8 @@ router = APIRouter(prefix="/api/auth", tags=["Autenticacao"])
 
 
 @router.post("/login", response_model=Token, summary="Obter token de acesso")
-async def login(form_data: OAuth2PasswordRequestForm = Depends()):
+@limiter.limit("5/minute")
+async def login(request: Request, form_data: OAuth2PasswordRequestForm = Depends()):
     """Authenticate with username/password and receive a JWT access token."""
     user = authenticate_user(form_data.username, form_data.password)
     if user is None:

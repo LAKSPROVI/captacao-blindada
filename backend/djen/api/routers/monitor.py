@@ -17,6 +17,9 @@ from djen.api.database import Database
 log = logging.getLogger("captacao.monitor")
 router = APIRouter(prefix="/api/monitor", tags=["Monitor"])
 
+DEFAULT_LIMIT = 100
+MAX_LIMIT = 500
+
 
 def get_db() -> Database:
     from djen.api.database import get_database
@@ -63,7 +66,7 @@ def publicacoes_recentes(
     fonte: Optional[str] = Query(None),
     tribunal: Optional[str] = Query(None),
     processo: Optional[str] = Query(None),
-    limite: int = Query(1000000, ge=1, le=1000000),
+    limite: int = Query(DEFAULT_LIMIT, ge=1, le=MAX_LIMIT),
 ):
     """Lista publicacoes recentes salvas no banco."""
     db = get_db()
@@ -86,7 +89,7 @@ def buscar_publicacoes_texto(
     termo: str = Query(..., min_length=1, description='Texto a buscar em todos os campos'),
     fonte: str = Query(None),
     tribunal: str = Query(None),
-    limite: int = Query(1000000, ge=1, le=1000000),
+    limite: int = Query(DEFAULT_LIMIT, ge=1, le=MAX_LIMIT),
 ):
     """Busca full-text nas publicacoes salvas localmente. Pesquisa em processo, conteudo, partes, advogados, OABs, assuntos."""
     db = get_db()

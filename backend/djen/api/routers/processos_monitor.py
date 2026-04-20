@@ -14,6 +14,9 @@ from djen.api.database import Database
 log = logging.getLogger("captacao.processos_monitor")
 router = APIRouter(prefix="/api/processos", tags=["Processos Monitorados"])
 
+DEFAULT_LIMIT = 100
+MAX_LIMIT = 500
+
 
 def get_db() -> Database:
     from djen.api.database import get_database
@@ -23,7 +26,8 @@ def get_db() -> Database:
 @router.get("/listar", summary="Listar processos monitorados")
 def listar_processos(
     status: str = Query("ativo", description="Status: ativo, inativo, todos"),
-    limite: int = Query(1000000, ge=1, le=1000000),
+    limite: int = Query(DEFAULT_LIMIT, ge=1, le=MAX_LIMIT),
+    offset: int = Query(0, ge=0),
 ):
     """Lista todos os processos sendo monitorados automaticamente."""
     db = get_db()
@@ -33,7 +37,7 @@ def listar_processos(
         processos = ativos + inativos
     else:
         processos = db.listar_processos_monitorados(status=status, limite=limite)
-    return {"status": "success", "total": len(processos), "processos": processos}
+    return {"status": "success", "total": len(processos), "limit": limite, "offset": offset, "processos": processos}
 
 
 @router.get("/stats", summary="Estatisticas de processos monitorados")
