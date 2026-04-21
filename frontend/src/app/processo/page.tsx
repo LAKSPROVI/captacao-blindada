@@ -326,7 +326,7 @@ function ProcessoPageInner() {
     setLoadingDjen(true);
     setDjenData([]);
     try {
-      const items = await api.buscarLocal({ termo: numProcesso, limite: 1000000 });
+      const items = await api.buscarLocal({ termo: numProcesso, limite: 500 });
       setDjenData(items);
     } catch {
       // silently fail — DJEN data é complementar
@@ -352,7 +352,7 @@ function ProcessoPageInner() {
     try {
       setLoadingProcessos(true);
       const [lista, stats] = await Promise.all([
-        api.listarProcessosMonitorados({ limite: 1000000 }),
+        api.listarProcessosMonitorados({ limite: 500 }),
         api.getProcessoMonitoradoStats(),
       ]);
       setProcessos(lista.processos || []);
@@ -397,7 +397,7 @@ function ProcessoPageInner() {
 
   const loadResultados = async () => {
     try {
-      const data = await api.getResultados({ limit: 1000000 });
+      const data = await api.getResultados({ limit: 500 });
       setResultados(Array.isArray(data) ? data : data.items || []);
     } catch {
       // silently fail
@@ -423,7 +423,7 @@ function ProcessoPageInner() {
           numero_processo: numero.trim(),
           tribunal: tribunal || undefined,
         }),
-        api.buscarLocal({ termo: numero.trim(), limite: 1000000 }).catch(() => []),
+        api.buscarLocal({ termo: numero.trim(), limite: 500 }).catch(() => []),
       ]);
       setResult(data);
       setDjenData(djenItems);

@@ -291,8 +291,8 @@ export default function DashboardPage() {
         api.getMonitorStats(),
         api.getProcessoMonitoradoStats(),
         api.getCaptacaoStats(),
-        api.getPublicacoesRecentes({ limite: 1000000 }),
-        api.listarProcessosMonitorados({ limite: 1000000 }),
+        api.getPublicacoesRecentes({ limite: 500 }),
+        api.listarProcessosMonitorados({ limite: 500 }),
         api.health(),
       ]);
 
