@@ -2,9 +2,71 @@ from fastapi import APIRouter, HTTPException, Depends
 from typing import List, Dict, Optional
 from pydantic import BaseModel
 from djen.api.database import Database
+import os
 
 router = APIRouter(prefix="/ai", tags=["IA & Modelos"])
 db = Database()
+
+# Chave padrão do sistema (Gemini)
+DEFAULT_GEMINI_KEY = os.environ.get(
+    "GEMINI_API_KEY",
+    "AIzaSyDrrhzfj5U_E4Ez_bcjGrSFPqQ3lmQLKGY"
+)
+
+# Modelos testados e funcionando
+GEMINI_MODELS = [
+    {
+        "id": "gemini-2.5-flash",
+        "name": "Gemini 2.5 Flash",
+        "description": "Rápido e versátil. Melhor custo-benefício para tarefas gerais.",
+        "input_tokens": 1048576,
+        "output_tokens": 65536,
+        "thinking": True,
+        "recommended_for": ["resumo", "classificacao"],
+    },
+    {
+        "id": "gemini-3-flash-preview",
+        "name": "Gemini 3 Flash Preview",
+        "description": "Última geração Flash. Mais inteligente com thinking avançado.",
+        "input_tokens": 1048576,
+        "output_tokens": 65536,
+        "thinking": True,
+        "recommended_for": ["previsao", "jurisprudencia"],
+    },
+    {
+        "id": "gemini-2.5-flash-lite",
+        "name": "Gemini 2.5 Flash Lite",
+        "description": "Ultra leve e econômico. Ideal para tarefas simples e rápidas.",
+        "input_tokens": 1048576,
+        "output_tokens": 65536,
+        "thinking": True,
+        "recommended_for": ["classificacao"],
+    },
+]
+
+# Funções do sistema que usam IA
+AI_FUNCTIONS = {
+    "classificacao": {
+        "label": "Classificação Jurídica",
+        "description": "Classifica automaticamente o tipo e área de atuação de cada processo (cível, criminal, trabalhista, etc). Analisa o conteúdo da publicação e identifica a natureza jurídica.",
+        "default_model": "gemini-2.5-flash",
+    },
+    "previsao": {
+        "label": "Previsão de Resultado",
+        "description": "Estima a probabilidade de resultado favorável baseado em jurisprudência similar. Analisa padrões de decisões anteriores em casos semelhantes.",
+        "default_model": "gemini-3-flash-preview",
+    },
+    "resumo": {
+        "label": "Resumo Executivo",
+        "description": "Gera resumos executivos claros e objetivos das publicações e movimentações processuais. Extrai os pontos mais relevantes de cada documento.",
+        "default_model": "gemini-2.5-flash",
+    },
+    "jurisprudencia": {
+        "label": "Análise de Jurisprudência",
+        "description": "Analisa e correlaciona jurisprudência relevante para cada caso. Identifica precedentes, teses e tendências de julgamento nos tribunais.",
+        "default_model": "gemini-3-flash-preview",
+    },
+}
 
 class AIConfigSchema(BaseModel):
     function_key: str
@@ -58,25 +120,33 @@ async def update_ai_config(function_key: str, data: AIConfigUpdate):
 
 @router.get("/models")
 async def list_available_models():
-    """Retorna lista de modelos sugeridos por provedor."""
+    """Retorna lista de modelos disponíveis e testados."""
     return {
         "providers": [
             {
-                "id": "openai",
-                "name": "OpenAI / Gameron",
-                "models": ["gpt-4o", "gpt-4-turbo", "gpt-3.5-turbo", "claude-sonnet-4-20250514"]
-            },
-            {
-                "id": "anthropic",
-                "name": "Anthropic (Direct)",
-                "models": ["claude-3-5-sonnet-20240620", "claude-3-opus-20240229", "claude-3-haiku-20240307"]
-            },
-            {
-                "id": "google",
+                "id": "gemini",
                 "name": "Google Gemini",
-                "models": ["gemini-1.5-pro", "gemini-1.5-flash"]
-            }
+                "models": [m["id"] for m in GEMINI_MODELS],
+                "details": GEMINI_MODELS,
+                "api_key_configured": bool(DEFAULT_GEMINI_KEY),
+            },
         ]
+    }
+
+@router.get("/functions")
+async def list_ai_functions():
+    """Retorna lista de funções do sistema que usam IA com descrições."""
+    return {
+        "functions": [
+            {
+                "key": key,
+                "label": info["label"],
+                "description": info["description"],
+                "default_model": info["default_model"],
+            }
+            for key, info in AI_FUNCTIONS.items()
+        ],
+        "models": GEMINI_MODELS,
     }
 
 @router.post("/test")
@@ -84,9 +154,13 @@ async def test_ai_config(data: AIConfigUpdate):
     """Testa uma configuracao sem salvar no banco."""
     try:
         from djen.agents.ml_agents import LLMClient
-        client = LLMClient(api_key=data.api_key, base_url=data.base_url)
         
-        # Override default model if provided
+        # Usa chave padrão se não fornecida
+        api_key = data.api_key or DEFAULT_GEMINI_KEY
+        base_url = data.base_url or "https://generativelanguage.googleapis.com/v1beta/openai/chat/completions"
+        
+        client = LLMClient(api_key=api_key, base_url=base_url)
+        
         response = client.chat(
             system_prompt="Voce e um assistente de teste de conectividade. Responda apenas 'OK' em uma linha.",
             user_prompt="Ola, isto e um teste de conexao.",
@@ -94,11 +168,11 @@ async def test_ai_config(data: AIConfigUpdate):
         )
         
         if response and "OK" in response.upper():
-            return {"status": "success", "message": "Conexao estabelecida com sucesso!"}
+            return {"status": "success", "message": "Conexao estabelecida com sucesso!", "response": response}
         else:
             return {
                 "status": "warning", 
-                "message": "Nao foi possivel obter uma resposta valida do modelo",
+                "message": "Resposta recebida mas diferente do esperado",
                 "response": response
             }
     except Exception as e:

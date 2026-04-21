@@ -41,17 +41,17 @@ const FUNCTION_LABELS: Record<string, string> = {
 };
 
 const FUNCTION_DESCRIPTIONS: Record<string, string> = {
-  classificacao: "Classifica automaticamente o tipo e área de atuação de cada processo.",
-  previsao: "Estima a probabilidade de resultado favorável baseado em jurisprudência.",
-  resumo: "Gera resumos executivos das publicações e movimentações processuais.",
-  jurisprudencia: "Analisa e correlaciona jurisprudência relevante para cada caso.",
+  classificacao: "Classifica automaticamente o tipo e área de atuação de cada processo (cível, criminal, trabalhista, etc).",
+  previsao: "Estima a probabilidade de resultado favorável baseado em jurisprudência similar.",
+  resumo: "Gera resumos executivos claros das publicações e movimentações processuais.",
+  jurisprudencia: "Analisa e correlaciona jurisprudência relevante, identifica precedentes e tendências.",
 };
 
 const PROVIDER_COLORS: Record<string, string> = {
-  openai: "bg-emerald-500/15 text-emerald-600 border-emerald-500/30",
-  anthropic: "bg-orange-500/15 text-orange-600 border-orange-500/30",
   gemini: "bg-blue-500/15 text-blue-600 border-blue-500/30",
   google: "bg-blue-500/15 text-blue-600 border-blue-500/30",
+  openai: "bg-emerald-500/15 text-emerald-600 border-emerald-500/30",
+  anthropic: "bg-orange-500/15 text-orange-600 border-orange-500/30",
   ollama: "bg-purple-500/15 text-purple-600 border-purple-500/30",
   deepseek: "bg-cyan-500/15 text-cyan-600 border-cyan-500/30",
 };
@@ -460,6 +460,76 @@ export default function AIConfigPage() {
           <p className="text-sm text-[var(--muted-foreground)] leading-relaxed">
             O sistema possui <strong className="text-[var(--foreground)]">fallback heurístico automático</strong>. Se uma função de IA for desativada ou ocorrer falha na API, o sistema continuará operando com algoritmos tradicionais de análise jurídica — garantindo disponibilidade total em qualquer cenário.
           </p>
+        </div>
+      </div>
+
+      {/* ── Como a IA é usada ── */}
+      <div className="rounded-xl border bg-[var(--card)] p-5">
+        <p className="text-xs font-semibold text-[var(--muted-foreground)] uppercase tracking-wider mb-4">
+          Como a IA é utilizada no sistema
+        </p>
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div className="flex items-start gap-3 p-3 rounded-lg bg-[var(--secondary)]/50">
+            <Hash className="w-5 h-5 text-blue-500 shrink-0 mt-0.5" />
+            <div>
+              <p className="text-sm font-medium text-[var(--foreground)]">Classificação Jurídica</p>
+              <p className="text-xs text-[var(--muted-foreground)] mt-1">Quando uma nova publicação é captada, a IA analisa o conteúdo e classifica automaticamente a área jurídica (cível, criminal, trabalhista, tributário, etc). Isso permite filtros inteligentes e organização automática.</p>
+            </div>
+          </div>
+          <div className="flex items-start gap-3 p-3 rounded-lg bg-[var(--secondary)]/50">
+            <BrainCircuit className="w-5 h-5 text-purple-500 shrink-0 mt-0.5" />
+            <div>
+              <p className="text-sm font-medium text-[var(--foreground)]">Previsão de Resultado</p>
+              <p className="text-xs text-[var(--muted-foreground)] mt-1">A IA analisa o histórico de decisões em casos similares e estima a probabilidade de resultado favorável. Usa padrões de jurisprudência para gerar um score de risco para cada processo.</p>
+            </div>
+          </div>
+          <div className="flex items-start gap-3 p-3 rounded-lg bg-[var(--secondary)]/50">
+            <FileText className="w-5 h-5 text-green-500 shrink-0 mt-0.5" />
+            <div>
+              <p className="text-sm font-medium text-[var(--foreground)]">Resumo Executivo</p>
+              <p className="text-xs text-[var(--muted-foreground)] mt-1">Gera resumos claros e objetivos de publicações longas do diário oficial. Extrai os pontos mais relevantes: prazos, decisões, intimações e despachos — economizando tempo de leitura.</p>
+            </div>
+          </div>
+          <div className="flex items-start gap-3 p-3 rounded-lg bg-[var(--secondary)]/50">
+            <Gavel className="w-5 h-5 text-amber-500 shrink-0 mt-0.5" />
+            <div>
+              <p className="text-sm font-medium text-[var(--foreground)]">Análise de Jurisprudência</p>
+              <p className="text-xs text-[var(--muted-foreground)] mt-1">Correlaciona cada processo com jurisprudência relevante dos tribunais. Identifica precedentes, teses dominantes e tendências de julgamento para embasar estratégias processuais.</p>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* ── Modelos disponíveis ── */}
+      <div className="rounded-xl border bg-[var(--card)] p-5">
+        <p className="text-xs font-semibold text-[var(--muted-foreground)] uppercase tracking-wider mb-4">
+          Modelos Gemini disponíveis
+        </p>
+        <div className="space-y-3">
+          <div className="flex items-center gap-3 p-3 rounded-lg border border-blue-500/20 bg-blue-500/5">
+            <Sparkles className="w-5 h-5 text-blue-500 shrink-0" />
+            <div className="flex-1">
+              <p className="text-sm font-medium text-[var(--foreground)]">Gemini 2.5 Flash</p>
+              <p className="text-xs text-[var(--muted-foreground)]">Rápido e versátil. Melhor custo-benefício. 1M tokens de entrada, 65K de saída. Thinking ativo.</p>
+            </div>
+            <span className="text-[10px] font-bold text-green-600 bg-green-500/10 px-2 py-0.5 rounded-full border border-green-500/20">Recomendado</span>
+          </div>
+          <div className="flex items-center gap-3 p-3 rounded-lg border border-purple-500/20 bg-purple-500/5">
+            <Sparkles className="w-5 h-5 text-purple-500 shrink-0" />
+            <div className="flex-1">
+              <p className="text-sm font-medium text-[var(--foreground)]">Gemini 3 Flash Preview</p>
+              <p className="text-xs text-[var(--muted-foreground)]">Última geração. Mais inteligente com thinking avançado. Ideal para análises complexas.</p>
+            </div>
+            <span className="text-[10px] font-bold text-purple-600 bg-purple-500/10 px-2 py-0.5 rounded-full border border-purple-500/20">Avançado</span>
+          </div>
+          <div className="flex items-center gap-3 p-3 rounded-lg border border-cyan-500/20 bg-cyan-500/5">
+            <Sparkles className="w-5 h-5 text-cyan-500 shrink-0" />
+            <div className="flex-1">
+              <p className="text-sm font-medium text-[var(--foreground)]">Gemini 2.5 Flash Lite</p>
+              <p className="text-xs text-[var(--muted-foreground)]">Ultra leve e econômico. Ideal para classificações simples e tarefas rápidas.</p>
+            </div>
+            <span className="text-[10px] font-bold text-cyan-600 bg-cyan-500/10 px-2 py-0.5 rounded-full border border-cyan-500/20">Econômico</span>
+          </div>
         </div>
       </div>
     </div>

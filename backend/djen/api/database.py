@@ -314,10 +314,10 @@ class Database:
             -- Inserir defaults se nao existirem
             INSERT OR IGNORE INTO ai_config (function_key, provider, model_name, enabled)
             VALUES 
-                ('classificacao', 'openai', 'claude-sonnet-4-20250514', 1),
-                ('previsao', 'openai', 'claude-sonnet-4-20250514', 1),
-                ('resumo', 'openai', 'claude-sonnet-4-20250514', 1),
-                ('jurisprudencia', 'openai', 'claude-sonnet-4-20250514', 1);
+                ('classificacao', 'gemini', 'gemini-2.5-flash', 1),
+                ('previsao', 'gemini', 'gemini-3-flash-preview', 1),
+                ('resumo', 'gemini', 'gemini-2.5-flash', 1),
+                ('jurisprudencia', 'gemini', 'gemini-3-flash-preview', 1);
 
             -- =========================================================
             -- Configuracoes Globais (v1.4)
