@@ -39,6 +39,16 @@ def listar_erros(limit: int = 100, offset: int = 0, status: str = "aberto", curr
     rows = db.conn.execute(query, params).fetchall()
     return [SystemErrorResponse(**dict(r)) for r in rows]
 
+
+@router.get("/recent", response_model=List[SystemErrorResponse])
+def listar_erros_recentes(limit: int = 20, current_user: UserInDB = Depends(require_role("master"))):
+    """(Master) Lista erros recentes do sistema."""
+    db = get_database()
+    rows = db.conn.execute(
+        "SELECT * FROM system_errors ORDER BY id DESC LIMIT ?", (limit,)
+    ).fetchall()
+    return [SystemErrorResponse(**dict(r)) for r in rows]
+
 @router.post("/{error_id}/resolve")
 def resolver_erro(error_id: int, current_user: UserInDB = Depends(require_role("master"))):
     """(Master) Marca o erro do sistema como resolvido."""

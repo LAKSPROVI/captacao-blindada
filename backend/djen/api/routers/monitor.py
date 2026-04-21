@@ -61,6 +61,14 @@ def listar_monitorados(ativos: bool = Query(True, description="Apenas ativos")):
     return [MonitoradoResponse(**m) for m in monitorados]
 
 
+@router.get("/monitorados", response_model=List[MonitoradoResponse], summary="Listar monitorados (alias)")
+def listar_monitorados_alias(ativos: bool = Query(True, description="Apenas ativos")):
+    """Alias para /list - Lista todos os itens monitorados."""
+    db = get_db()
+    monitorados = db.listar_monitorados(apenas_ativos=ativos)
+    return [MonitoradoResponse(**m) for m in monitorados]
+
+
 @router.get("/publicacoes/recentes", response_model=List[PublicacaoResponse], summary="Publicacoes recentes")
 def publicacoes_recentes(
     fonte: Optional[str] = Query(None),
