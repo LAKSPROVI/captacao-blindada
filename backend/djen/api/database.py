@@ -48,8 +48,8 @@ class Database:
                 ativo INTEGER DEFAULT 1,
                 tribunal TEXT,
                 fontes TEXT DEFAULT 'datajud,djen_api',
-                criado_em TEXT DEFAULT (datetime('now')),
-                atualizado_em TEXT DEFAULT (datetime('now')),
+                criado_em TEXT DEFAULT (datetime('now', 'localtime')),
+                atualizado_em TEXT DEFAULT (datetime('now', 'localtime')),
                 ultima_busca TEXT,
                 UNIQUE(tipo, valor)
             );
@@ -74,7 +74,7 @@ class Database:
                 partes TEXT,
                 notificado INTEGER DEFAULT 0,
                 monitorado_id INTEGER,
-                criado_em TEXT DEFAULT (datetime('now')),
+                criado_em TEXT DEFAULT (datetime('now', 'localtime')),
                 FOREIGN KEY (monitorado_id) REFERENCES monitorados(id)
             );
 
@@ -88,7 +88,7 @@ class Database:
                 status TEXT DEFAULT 'ok',
                 duracao_ms INTEGER,
                 erro TEXT,
-                criado_em TEXT DEFAULT (datetime('now'))
+                criado_em TEXT DEFAULT (datetime('now', 'localtime'))
             );
 
             CREATE TABLE IF NOT EXISTS health_checks (
@@ -98,7 +98,7 @@ class Database:
                 latency_ms INTEGER,
                 message TEXT,
                 proxy_used INTEGER DEFAULT 0,
-                criado_em TEXT DEFAULT (datetime('now'))
+                criado_em TEXT DEFAULT (datetime('now', 'localtime'))
             );
 
             -- =========================================================
@@ -110,8 +110,8 @@ class Database:
                 nome TEXT NOT NULL,
                 ativo INTEGER DEFAULT 1,
                 saldo_tokens INTEGER DEFAULT 0,
-                criado_em TEXT DEFAULT (datetime('now')),
-                atualizado_em TEXT DEFAULT (datetime('now'))
+                criado_em TEXT DEFAULT (datetime('now', 'localtime')),
+                atualizado_em TEXT DEFAULT (datetime('now', 'localtime'))
             );
 
             CREATE TABLE IF NOT EXISTS users (
@@ -121,7 +121,7 @@ class Database:
                 hashed_password TEXT NOT NULL,
                 full_name TEXT NOT NULL,
                 role TEXT NOT NULL DEFAULT 'viewer',
-                criado_em TEXT DEFAULT (datetime('now')),
+                criado_em TEXT DEFAULT (datetime('now', 'localtime')),
                 FOREIGN KEY (tenant_id) REFERENCES tenants(id)
             );
 
@@ -129,7 +129,7 @@ class Database:
                 function_name TEXT PRIMARY KEY,
                 description TEXT,
                 cost_tokens INTEGER DEFAULT 0,
-                atualizado_em TEXT DEFAULT (datetime('now'))
+                atualizado_em TEXT DEFAULT (datetime('now', 'localtime'))
             );
 
             CREATE TABLE IF NOT EXISTS usage_logs (
@@ -139,7 +139,7 @@ class Database:
                 function_name TEXT NOT NULL,
                 tokens_used INTEGER DEFAULT 0,
                 metadata TEXT,
-                data_uso TEXT DEFAULT (datetime('now')),
+                data_uso TEXT DEFAULT (datetime('now', 'localtime')),
                 FOREIGN KEY (tenant_id) REFERENCES tenants(id),
                 FOREIGN KEY (user_id) REFERENCES users(id)
             );
@@ -160,7 +160,7 @@ class Database:
                 details TEXT,
                 ip_address TEXT,
                 data_hash TEXT NOT NULL,
-                criado_em TEXT DEFAULT (datetime('now')),
+                criado_em TEXT DEFAULT (datetime('now', 'localtime')),
                 FOREIGN KEY (tenant_id) REFERENCES tenants(id),
                 FOREIGN KEY (user_id) REFERENCES users(id)
             );
@@ -175,7 +175,7 @@ class Database:
                 stack_trace TEXT,
                 status TEXT DEFAULT 'aberto',
                 resolvido_em TEXT,
-                criado_em TEXT DEFAULT (datetime('now')),
+                criado_em TEXT DEFAULT (datetime('now', 'localtime')),
                 FOREIGN KEY (tenant_id) REFERENCES tenants(id),
                 FOREIGN KEY (user_id) REFERENCES users(id)
             );
@@ -240,8 +240,8 @@ class Database:
                 modalidade TEXT DEFAULT 'recorrente',
 
                 -- Meta
-                criado_em TEXT DEFAULT (datetime('now')),
-                atualizado_em TEXT DEFAULT (datetime('now')),
+                criado_em TEXT DEFAULT (datetime('now', 'localtime')),
+                atualizado_em TEXT DEFAULT (datetime('now', 'localtime')),
                 ultima_execucao TEXT,
                 total_execucoes INTEGER DEFAULT 0,
                 total_resultados INTEGER DEFAULT 0,
@@ -260,7 +260,7 @@ class Database:
                 novos_resultados INTEGER DEFAULT 0,
                 duracao_ms INTEGER,
                 erro TEXT,
-                criado_em TEXT DEFAULT (datetime('now')),
+                criado_em TEXT DEFAULT (datetime('now', 'localtime')),
                 FOREIGN KEY (captacao_id) REFERENCES captacoes(id)
             );
 
@@ -289,8 +289,8 @@ class Database:
                 total_movimentacoes INTEGER DEFAULT 0,
                 movimentacoes TEXT,
                 data_ultima_movimentacao TEXT,
-                criado_em TEXT DEFAULT (datetime('now')),
-                atualizado_em TEXT DEFAULT (datetime('now'))
+                criado_em TEXT DEFAULT (datetime('now', 'localtime')),
+                atualizado_em TEXT DEFAULT (datetime('now', 'localtime'))
             );
 
             CREATE INDEX IF NOT EXISTS idx_proc_mon_numero ON processos_monitorados(numero_processo);
@@ -308,7 +308,7 @@ class Database:
                 api_key TEXT,
                 base_url TEXT,
                 enabled INTEGER DEFAULT 1,
-                updated_at TEXT DEFAULT (datetime('now'))
+                updated_at TEXT DEFAULT (datetime('now', 'localtime'))
             );
 
             -- Inserir defaults se nao existirem
@@ -326,7 +326,7 @@ class Database:
             CREATE TABLE IF NOT EXISTS system_settings (
                 key TEXT PRIMARY KEY,
                 value TEXT,
-                updated_at TEXT DEFAULT (datetime('now'))
+                updated_at TEXT DEFAULT (datetime('now', 'localtime'))
             );
 
             -- =========================================================
@@ -336,7 +336,7 @@ class Database:
             CREATE TABLE IF NOT EXISTS processos_monitorados_historico (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 numero_processo TEXT NOT NULL,
-                data_verificacao TEXT DEFAULT (datetime('now')),
+                data_verificacao TEXT DEFAULT (datetime('now', 'localtime')),
                 status TEXT, -- ok, erro, sem_mudancas
                 fonte TEXT, -- datajud, djen
                 detalhes TEXT, -- JSON com o que mudou ou mensagem de erro
@@ -417,7 +417,7 @@ class Database:
         except sqlite3.IntegrityError:
             # Ja existe, reativar
             self.conn.execute(
-                """UPDATE monitorados SET ativo=1, atualizado_em=datetime('now'),
+                """UPDATE monitorados SET ativo=1, atualizado_em=datetime('now', 'localtime'),
                    intervalo_minutos=?, horario_inicio=?, horario_fim=?, dias_semana=?
                    WHERE tipo=? AND valor=?""",
                 (intervalo_minutos, horario_inicio, horario_fim, dias_semana, tipo, valor),
@@ -458,14 +458,14 @@ class Database:
                 vals.append(v)
         if not sets:
             return False
-        sets.append("atualizado_em=datetime('now')")
+        sets.append("atualizado_em=datetime('now', 'localtime')")
         vals.append(monitorado_id)
         self.conn.execute(f"UPDATE monitorados SET {', '.join(sets)} WHERE id=?", vals)
         self.conn.commit()
         return True
 
     def desativar_monitorado(self, monitorado_id: int) -> bool:
-        self.conn.execute("UPDATE monitorados SET ativo=0, atualizado_em=datetime('now') WHERE id=?", (monitorado_id,))
+        self.conn.execute("UPDATE monitorados SET ativo=0, atualizado_em=datetime('now', 'localtime') WHERE id=?", (monitorado_id,))
         self.conn.commit()
         return True
 
@@ -551,7 +551,7 @@ class Database:
         """Atualiza estatisticas e agenda proxima execucao."""
         self.conn.execute(
             """UPDATE monitorados SET
-               ultima_busca = datetime('now'),
+               ultima_busca = datetime('now', 'localtime'),
                total_publicacoes = total_publicacoes + ?,
                proxima_busca = ?
                WHERE id = ?""",
@@ -691,7 +691,7 @@ class Database:
                     vals.append(v)
         if not sets:
             return False
-        sets.append("atualizado_em=datetime('now')")
+        sets.append("atualizado_em=datetime('now', 'localtime')")
         vals.append(captacao_id)
         self.conn.execute(f"UPDATE captacoes SET {', '.join(sets)} WHERE id=?", vals)
         self.conn.commit()
@@ -706,12 +706,12 @@ class Database:
         proxima = (datetime.now(tz=BRASILIA_TZ) + timedelta(minutes=intervalo_minutos)).isoformat()
         self.conn.execute("""
             UPDATE captacoes SET
-                ultima_execucao=datetime('now'),
+                ultima_execucao=datetime('now', 'localtime'),
                 total_execucoes=total_execucoes+1,
                 total_resultados=total_resultados+?,
                 total_novos=total_novos+?,
                 proxima_execucao=?,
-                atualizado_em=datetime('now')
+                atualizado_em=datetime('now', 'localtime')
             WHERE id=?
         """, (total, novos, proxima, captacao_id))
         self.conn.commit()
@@ -735,7 +735,7 @@ class Database:
         """Registra inicio de uma execucao de captacao."""
         cur = self.conn.execute("""
             INSERT INTO execucoes_captacao (captacao_id, inicio, fonte, parametros_json)
-            VALUES (?, datetime('now'), ?, ?)
+            VALUES (?, datetime('now', 'localtime'), ?, ?)
         """, (captacao_id, fonte, parametros_json))
         self.conn.commit()
         return cur.lastrowid or 0
@@ -746,7 +746,7 @@ class Database:
         """Finaliza uma execucao de captacao."""
         self.conn.execute("""
             UPDATE execucoes_captacao SET
-                fim=datetime('now'), status=?, total_resultados=?,
+                fim=datetime('now', 'localtime'), status=?, total_resultados=?,
                 novos_resultados=?, duracao_ms=?, erro=?
             WHERE id=?
         """, (status, total, novos, duracao_ms, erro, exec_id))
@@ -993,8 +993,8 @@ class Database:
             sets = [
                 "movimentacoes = ?",
                 "total_movimentacoes = ?",
-                "ultima_verificacao = datetime('now')",
-                "atualizado_em = datetime('now')",
+                "ultima_verificacao = datetime('now', 'localtime')",
+                "atualizado_em = datetime('now', 'localtime')",
             ]
             params: list = [_json.dumps(movimentacoes, ensure_ascii=False), len(movimentacoes)]
             if tribunal:
@@ -1101,7 +1101,7 @@ class Database:
     def deletar_processo_monitorado(self, numero_processo: str) -> bool:
         """Remove processo monitorado (soft delete - muda status para inativo)."""
         cur = self.conn.execute(
-            "UPDATE processos_monitorados SET status='inativo', atualizado_em=datetime('now') WHERE numero_processo=?",
+            "UPDATE processos_monitorados SET status='inativo', atualizado_em=datetime('now', 'localtime') WHERE numero_processo=?",
             (numero_processo.strip(),)
         )
         self.conn.commit()
@@ -1125,14 +1125,14 @@ class Database:
         """Salva ou atualiza uma configuracao de IA."""
         self.conn.execute("""
             INSERT INTO ai_config (function_key, provider, model_name, api_key, base_url, enabled, updated_at)
-            VALUES (?, ?, ?, ?, ?, ?, datetime('now'))
+            VALUES (?, ?, ?, ?, ?, ?, datetime('now', 'localtime'))
             ON CONFLICT(function_key) DO UPDATE SET
                 provider=excluded.provider,
                 model_name=excluded.model_name,
                 api_key=COALESCE(excluded.api_key, ai_config.api_key),
                 base_url=COALESCE(excluded.base_url, ai_config.base_url),
                 enabled=excluded.enabled,
-                updated_at=datetime('now')
+                updated_at=datetime('now', 'localtime')
         """, (function_key, provider, model_name, api_key, base_url, 1 if enabled else 0))
         self.conn.commit()
         return True
@@ -1156,7 +1156,7 @@ class Database:
         """Salva ou atualiza uma configuracao."""
         try:
             self.conn.execute(
-                "INSERT INTO system_settings (key, value, updated_at) VALUES (?, ?, datetime('now')) "
+                "INSERT INTO system_settings (key, value, updated_at) VALUES (?, ?, datetime('now', 'localtime')) "
                 "ON CONFLICT(key) DO UPDATE SET value=excluded.value, updated_at=excluded.updated_at",
                 (key, str(value))
             )
