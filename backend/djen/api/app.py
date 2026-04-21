@@ -309,8 +309,11 @@ class MetricsMiddleware(BaseHTTPMiddleware):
 app.add_middleware(MetricsMiddleware)
 
 # Rate Limiter
+from slowapi.errors import RateLimitExceeded
+from slowapi import _rate_limit_exceeded_handler
+
 app.state.limiter = limiter
-app.add_exception_handler(limiter._on_error, limiter._rate_limit_exceeded)
+app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
 # Global Error Handler
 @app.exception_handler(Exception)
