@@ -15,8 +15,16 @@ import logging
 import time
 import threading
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, List, Optional, Tuple
+from zoneinfo import ZoneInfo
+
+BRASILIA_TZ = ZoneInfo("America/Sao_Paulo")
+
+
+def agora_brasilia() -> datetime:
+    """Retorna datetime atual no fuso de Brasília."""
+    return datetime.now(tz=BRASILIA_TZ)
 
 log = logging.getLogger("captacao.captacao_service")
 
@@ -60,10 +68,10 @@ class CaptacaoService:
         # Logica de modalidade
         if modalidade == "recorrente":
             if not data_fim:
-                data_fim = datetime.now().strftime("%Y-%m-%d")
+                data_fim = agora_brasilia().strftime("%Y-%m-%d")
             if not data_inicio:
                 # Default 30 dias se nao especificado
-                data_inicio = (datetime.now() - timedelta(days=30)).strftime("%Y-%m-%d")
+                data_inicio = (agora_brasilia() - timedelta(days=30)).strftime("%Y-%m-%d")
         
         if tipo == "processo":
             numero = cap.get("numero_processo")
@@ -140,9 +148,9 @@ class CaptacaoService:
         
         if modalidade == "recorrente":
             if not data_fim:
-                data_fim = datetime.now().strftime("%Y-%m-%d")
+                data_fim = agora_brasilia().strftime("%Y-%m-%d")
             if not data_inicio:
-                data_inicio = (datetime.now() - timedelta(days=30)).strftime("%Y-%m-%d")
+                data_inicio = (agora_brasilia() - timedelta(days=30)).strftime("%Y-%m-%d")
 
         base = {
             "tribunal": cap.get("tribunal"),
@@ -440,7 +448,7 @@ class CaptacaoService:
         proxima_execucao <= agora, dentro do horario permitido).
         """
         db = self._get_db()
-        agora = datetime.now()
+        agora = agora_brasilia()
         agora_iso = agora.isoformat()
 
         pendentes = db.listar_captacoes_pendentes(agora_iso)

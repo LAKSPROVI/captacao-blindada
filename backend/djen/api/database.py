@@ -611,7 +611,10 @@ class Database:
     def criar_captacao(self, nome: str, tipo_busca: str = "processo", **kwargs) -> int:
         """Cria nova captacao automatizada."""
         from datetime import datetime, timedelta
+        from zoneinfo import ZoneInfo
+        BRASILIA_TZ = ZoneInfo("America/Sao_Paulo")
         intervalo = kwargs.get("intervalo_minutos", 120)
+        proxima = (datetime.now(tz=BRASILIA_TZ) + timedelta(minutes=intervalo)).isoformat()
         proxima = (datetime.now() + timedelta(minutes=intervalo)).isoformat()
 
         cols = ["nome", "tipo_busca", "proxima_execucao"]
@@ -698,7 +701,9 @@ class Database:
                                          intervalo_minutos: int):
         """Atualiza captacao apos execucao: contadores e proxima_execucao."""
         from datetime import datetime, timedelta
-        proxima = (datetime.now() + timedelta(minutes=intervalo_minutos)).isoformat()
+        from zoneinfo import ZoneInfo
+        BRASILIA_TZ = ZoneInfo("America/Sao_Paulo")
+        proxima = (datetime.now(tz=BRASILIA_TZ) + timedelta(minutes=intervalo_minutos)).isoformat()
         self.conn.execute("""
             UPDATE captacoes SET
                 ultima_execucao=datetime('now'),
