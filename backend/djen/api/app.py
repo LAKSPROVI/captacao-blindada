@@ -22,6 +22,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from djen.api.database import get_database, Database
 from djen.api.schemas import APIInfoResponse
+from pydantic import BaseModel # Defensiva para NameError
 import traceback
 from fastapi import Request
 from fastapi.responses import JSONResponse
