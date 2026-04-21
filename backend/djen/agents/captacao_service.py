@@ -240,32 +240,40 @@ class CaptacaoService:
 
         try:
             tipo = cap["tipo_busca"]
+            max_paginas = 10  # Até 10 páginas = ~1000 resultados
 
             if tipo == "processo":
                 results = source.buscar_por_processo(params["numero_processo"])
             elif tipo == "oab":
-                results = source.buscar_por_oab(
-                    params["numero_oab"],
-                    params.get("uf_oab", "SP"),
+                results = source.buscar_paginado(
+                    paginas=max_paginas,
+                    termo=f"OAB {params['numero_oab']}/{params.get('uf_oab', 'SP')}",
+                    numero_oab=params["numero_oab"],
+                    uf_oab=params.get("uf_oab", "SP"),
                     data_inicio=params.get("data_inicio"),
                     data_fim=params.get("data_fim"),
                 )
             elif tipo == "nome_parte":
-                results = source.buscar(
+                results = source.buscar_paginado(
+                    paginas=max_paginas,
                     termo=params["nome_parte"],
                     tribunal=params.get("tribunal"),
                     data_inicio=params.get("data_inicio"),
                     data_fim=params.get("data_fim"),
+                    nome_parte=params["nome_parte"],
                 )
             elif tipo == "nome_advogado":
-                results = source.buscar(
+                results = source.buscar_paginado(
+                    paginas=max_paginas,
                     termo=params["nome_advogado"],
                     tribunal=params.get("tribunal"),
                     data_inicio=params.get("data_inicio"),
                     data_fim=params.get("data_fim"),
+                    nome_advogado=params["nome_advogado"],
                 )
             elif tipo == "tribunal_geral":
-                results = source.buscar(
+                results = source.buscar_paginado(
+                    paginas=max_paginas,
                     termo="",
                     tribunal=params.get("tribunal"),
                     data_inicio=params.get("data_inicio"),
