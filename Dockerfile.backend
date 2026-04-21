@@ -25,6 +25,8 @@ COPY backend/djen /app/djen
 ENV PYTHONPATH=/app
 ENV CAPTACAO_DB_PATH=/app/data/captacao_blindada.db
 ENV IS_PRODUCTION=false
+ENV TZ=America/Sao_Paulo
+RUN ln -snf /usr/share/zoneinfo/$TZ /etc/localtime && echo $TZ > /etc/timezone
 
 # === Volume ===
 RUN mkdir -p /app/data && chown -R 1000:1000 /app/data || true
