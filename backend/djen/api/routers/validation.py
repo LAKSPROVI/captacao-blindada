@@ -7,7 +7,9 @@ import logging
 from typing import Optional
 
 from fastapi import APIRouter, HTTPException, Query
+from pydantic import BaseModel
 
+from djen.api.validation as validators
 from djen.api.validation import (
     validate_cnj,
     validate_oab,
