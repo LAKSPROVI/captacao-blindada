@@ -49,6 +49,10 @@ class CaptacaoService:
             return DjenSource()
         return None
 
+    def _montar_parametros_datajud(self, cap: Dict) -> Optional[Dict]:
+        """Monta parametros de busca para DataJud conforme tipo_busca."""
+        tipo = cap["tipo_busca"]
+
         data_inicio = cap.get("data_inicio")
         data_fim = cap.get("data_fim")
         modalidade = cap.get("modalidade", "recorrente")
