@@ -777,14 +777,16 @@ class Database:
             except Exception:
                 pass  # Coluna ja existe
 
+            pub_hash = pub_dict.get("hash", "")
+
             cur = self.conn.execute("""
                 INSERT OR IGNORE INTO publicacoes
                 (hash, fonte, tribunal, data_publicacao, conteudo, numero_processo,
                  classe_processual, orgao_julgador, assuntos, movimentos, url_origem,
                  caderno, pagina, oab_encontradas, advogados, partes, captacao_id)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """, (
-                pub_dict.get("hash", ""),
+                pub_hash,
                 pub_dict.get("fonte", ""),
                 pub_dict.get("tribunal", ""),
                 pub_dict.get("data_publicacao", ""),
@@ -803,6 +805,14 @@ class Database:
                 captacao_id,
             ))
             self.conn.commit()
+            
+            # Se INSERT foi ignorado (hash ja existe), atualizar captacao_id
+            if cur.rowcount == 0 and pub_hash:
+                self.conn.execute(
+                    "UPDATE publicacoes SET captacao_id=? WHERE hash=? AND (captacao_id IS NULL OR captacao_id != ?)",
+                    (captacao_id, pub_hash, captacao_id)
+                )
+                self.conn.commit()
             
             # Dispara webhook se nova publicacao
             if cur.lastrowid:

@@ -131,8 +131,8 @@ export default function CaptacaoPage() {
     setIsLoadingDetail(true);
     try {
       const [hist, res] = await Promise.allSettled([
-        api.historicoCaptacao(id, { limite: 1000000 }),
-        api.resultadosCaptacao(id, { limite: 1000000 }),
+        api.historicoCaptacao(id, { limite: 500 }),
+        api.resultadosCaptacao(id, { limite: 500 }),
       ]);
       if (hist.status === "fulfilled") setHistorico(hist.value.execucoes || []);
       if (res.status === "fulfilled") setResultados(res.value.publicacoes || []);
