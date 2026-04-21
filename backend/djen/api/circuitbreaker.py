@@ -77,7 +77,7 @@ class CircuitBreaker:
     def state(self) -> CircuitState:
         """Retorna o estado atual considerando timeout."""
         with self._lock:
-            if self._state == CircuitState.ABE:
+            if self._state == CircuitState.ABERTO:
                 # Verifica se timeout expirou
                 if self._opened_at and time.time() - self._opened_at >= self.config.timeout_open:
                     log.info(f"[CircuitBreaker] {self.name}: Timeout expirou, testando...")
@@ -93,7 +93,7 @@ class CircuitBreaker:
             CircuitOpenError: Se circuito está aberto
             Exception: Qualquer erro da função
         """
-        if self.state == CircuitState.ABE:
+        if self.state == CircuitState.ABERTO:
             raise CircuitOpenError(
                 f"Circuit {self.name} is OPEN",
                 retry_after=int(self.config.timeout_open - (time.time() - self._opened_at))
@@ -135,9 +135,9 @@ class CircuitBreaker:
             self._last_failure_time = time.time()
             
             if self._failure_count >= self.config.failures_threshold:
-                if self.state != CircuitState.ABE:
+                if self.state != CircuitState.ABERTO:
                     log.warning(f"[CircuitBreaker] {self.name}: ABERTO apos {self._failure_count} falhas")
-                    self._state = CircuitState.ABE
+                    self._state = CircuitState.ABERTO
                     self._opened_at = time.time()
     
     def reset(self):
