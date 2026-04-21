@@ -8,7 +8,7 @@ import os
 import shutil
 import threading
 from datetime import datetime, timedelta
-from typing import Optional, List
+from typing import Optional, List, Dict
 import sqlite3
 
 log = logging.getLogger("captacao.backup")
