@@ -23,21 +23,21 @@
 }
 
 .dark {
-  --background: #0c1726;
-  --foreground: #f0f2f5;
-  --card: #122339;
-  --card-foreground: #f0f2f5;
-  --primary: #5387c3;
+  --background: #0a0f1a;
+  --foreground: #e8edf5;
+  --card: #111827;
+  --card-foreground: #e8edf5;
+  --primary: #6b9fd4;
   --primary-foreground: #ffffff;
-  --secondary: #182e4c;
-  --secondary-foreground: #f0f2f5;
-  --muted: #182e4c;
-  --muted-foreground: #9ca3af;
-  --accent: #c49b1a;
+  --secondary: #1a2744;
+  --secondary-foreground: #e8edf5;
+  --muted: #1a2744;
+  --muted-foreground: #8b95a8;
+  --accent: #d4a82a;
   --accent-foreground: #ffffff;
-  --border: #1e3a5f;
-  --input: #1e3a5f;
-  --ring: #5387c3;
+  --border: #243352;
+  --input: #243352;
+  --ring: #6b9fd4;
 }
 
 body {
@@ -66,4 +66,51 @@ body {
 
 ::-webkit-scrollbar-thumb:hover {
   background: var(--primary);
+}
+
+/* Dark mode transitions */
+body, .dark body {
+  transition: background-color 0.3s ease, color 0.3s ease;
+}
+
+/* Dark mode improvements */
+.dark input, .dark select, .dark textarea {
+  color-scheme: dark;
+}
+
+.dark input::placeholder, .dark textarea::placeholder {
+  color: #6b7a90;
+}
+
+.dark table thead {
+  background-color: #1a2744;
+}
+
+.dark table tbody tr:hover {
+  background-color: rgba(107, 159, 212, 0.05);
+}
+
+.dark .shadow-sm {
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.4);
+}
+
+.dark .shadow-md {
+  box-shadow: 0 4px 6px rgba(0, 0, 0, 0.5);
+}
+
+/* Dark mode badges */
+.dark .bg-green-500\/10 { background-color: rgba(34, 197, 94, 0.12); }
+.dark .bg-blue-500\/10 { background-color: rgba(59, 130, 246, 0.12); }
+.dark .bg-red-500\/10 { background-color: rgba(239, 68, 68, 0.12); }
+.dark .bg-purple-500\/10 { background-color: rgba(168, 85, 247, 0.12); }
+.dark .bg-amber-500\/10 { background-color: rgba(245, 158, 11, 0.12); }
+
+/* Focus rings in dark mode */
+.dark *:focus-visible {
+  outline-color: var(--ring);
+}
+
+/* Smooth card borders in dark */
+.dark .border {
+  border-color: var(--border);
 }

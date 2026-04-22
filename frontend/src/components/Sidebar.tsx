@@ -236,11 +236,20 @@ export function Sidebar() {
         {user && (
           <div
             className={cn(
-              "flex items-center gap-3 rounded-lg px-3 py-2",
+              "flex items-center gap-3 rounded-lg px-3 py-2 cursor-pointer hover:bg-[var(--secondary)] transition-colors",
               collapsed ? "justify-center" : ""
             )}
+            onClick={() => {
+              if (user.role === "master" || user.role === "tenant_admin") {
+                window.location.href = "/admin/usuarios";
+              }
+            }}
+            title={user.role === "master" ? "Painel Master → Gestão de Usuários" : user.role === "tenant_admin" ? "Painel Admin → Gestão de Usuários" : ""}
           >
-            <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-legal-600 text-white text-sm font-medium">
+            <div className={cn(
+              "flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-white text-sm font-medium",
+              user.role === "master" ? "bg-amber-600 ring-2 ring-amber-400/50" : "bg-legal-600"
+            )}>
               {user.username?.charAt(0).toUpperCase() || <User className="h-4 w-4" />}
             </div>
             {!collapsed && (
@@ -248,8 +257,11 @@ export function Sidebar() {
                 <p className="text-sm font-medium text-[var(--card-foreground)] truncate">
                   {user.full_name || user.username}
                 </p>
-                <p className="text-xs text-[var(--muted-foreground)] truncate uppercase font-semibold text-legal-500">
-                  {user.role}
+                <p className={cn(
+                  "text-xs truncate uppercase font-semibold",
+                  user.role === "master" ? "text-amber-500" : "text-legal-500"
+                )}>
+                  {user.role === "master" ? "Administrador Master" : user.role}
                 </p>
                 <p className="text-[10px] text-[var(--muted-foreground)] truncate">
                   {user.email || user.username}
