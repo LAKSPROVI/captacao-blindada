@@ -42,7 +42,7 @@ export default function AuditoriaPage() {
       setIsLoading(true);
       const [logsData, statsData] = await Promise.allSettled([
         api.getAuditLogs(500, 0),
-        api.client.get("/api/audit/stats").then((r: any) => r.data),
+        api.getAuditStats(),
       ]);
       if (logsData.status === "fulfilled") setLogs(logsData.value);
       if (statsData.status === "fulfilled") setStats(statsData.value);

@@ -732,6 +732,11 @@ class ApiClient {
     return data;
   }
 
+  async getAuditStats(): Promise<any> {
+    const { data } = await this.client.get("/audit/stats");
+    return data;
+  }
+
   async getSystemErrors(status: string = "aberto", limit = 100, offset = 0): Promise<any[]> {
     const { data } = await this.client.get("/errors", { params: { status, limit, offset } });
     return data;
