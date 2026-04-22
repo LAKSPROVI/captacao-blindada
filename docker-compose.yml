@@ -23,10 +23,11 @@ services:
       - IS_PRODUCTION=${IS_PRODUCTION:-false}
       - JWT_SECRET_KEY=${JWT_SECRET_KEY:-default-dev-key-change-in-production}
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8000/api/health"]
-      interval: 30s
-      timeout: 5s
-      retries: 3
+      test: ["CMD", "curl", "-f", "http://localhost:8000/api/metrics/health"]
+      interval: 60s
+      timeout: 15s
+      start_period: 120s
+      retries: 5
     networks:
       - captacao-net
 
@@ -41,8 +42,7 @@ services:
     environment:
       - NEXT_PUBLIC_API_URL=${NEXT_PUBLIC_API_URL:-http://backend:8000}
     depends_on:
-      backend:
-        condition: service_healthy
+      - backend
     networks:
       - captacao-net
 
