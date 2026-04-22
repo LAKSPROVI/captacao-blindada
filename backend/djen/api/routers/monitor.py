@@ -4,9 +4,14 @@ Endpoints para gerenciamento de monitorados e publicacoes.
 """
 
 import logging
+import csv
+import io
+import json
 from typing import Optional, List
+from datetime import datetime
 
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, HTTPException, Query, Body
+from fastapi.responses import StreamingResponse
 
 from djen.api.schemas import (
     MonitoradoCreateRequest, MonitoradoUpdateRequest,
@@ -150,3 +155,94 @@ def desativar_monitorado(monitorado_id: int):
     db = get_db()
     db.desativar_monitorado(monitorado_id)
     return {"status": "ok", "message": f"Monitorado {monitorado_id} desativado"}
+
+
+# =============================================================================
+# Exportação de Publicações
+# =============================================================================
+
+@router.get("/publicacoes/export/csv", summary="Exportar publicações em CSV")
+def exportar_publicacoes_csv(
+    fonte: Optional[str] = Query(None),
+    tribunal: Optional[str] = Query(None),
+    limite: int = Query(MAX_LIMIT, ge=1, le=5000),
+):
+    """Exporta publicações em CSV."""
+    db = get_db()
+    pubs = db.buscar_publicacoes(fonte=fonte, tribunal=tribunal, limite=limite)
+    
+    output = io.StringIO()
+    writer = csv.writer(output)
+    writer.writerow(["ID", "Fonte", "Tribunal", "Data", "Processo", "Classe", "Orgao", "OABs", "Advogados", "Partes", "Conteudo"])
+    
+    for p in pubs:
+        writer.writerow([
+            p.get("id", ""),
+            p.get("fonte", ""),
+            p.get("tribunal", ""),
+            p.get("data_publicacao", ""),
+            p.get("numero_processo", ""),
+            p.get("classe_processual", ""),
+            p.get("orgao_julgador", ""),
+            p.get("oab_encontradas", ""),
+            p.get("advogados", ""),
+            p.get("partes", ""),
+            (p.get("conteudo", "") or "")[:500],
+        ])
+    
+    output.seek(0)
+    return StreamingResponse(
+        iter([output.getvalue()]),
+        media_type="text/csv",
+        headers={"Content-Disposition": f"attachment; filename=publicacoes_{datetime.now().strftime('%Y%m%d_%H%M')}.csv"}
+    )
+
+
+@router.get("/publicacoes/export/json", summary="Exportar publicações em JSON")
+def exportar_publicacoes_json(
+    fonte: Optional[str] = Query(None),
+    tribunal: Optional[str] = Query(None),
+    limite: int = Query(MAX_LIMIT, ge=1, le=5000),
+):
+    """Exporta publicações em JSON."""
+    db = get_db()
+    pubs = db.buscar_publicacoes(fonte=fonte, tribunal=tribunal, limite=limite)
+    
+    data = json.dumps(pubs, ensure_ascii=False, indent=2, default=str)
+    return StreamingResponse(
+        iter([data]),
+        media_type="application/json",
+        headers={"Content-Disposition": f"attachment; filename=publicacoes_{datetime.now().strftime('%Y%m%d_%H%M')}.json"}
+    )
+
+
+# =============================================================================
+# Marcar publicação como lida/favorita
+# =============================================================================
+
+@router.put("/publicacoes/{pub_id}/lida", summary="Marcar publicação como lida")
+def marcar_lida(pub_id: int, lida: bool = Body(True)):
+    """Marca/desmarca publicação como lida."""
+    db = get_db()
+    try:
+        db.conn.execute("ALTER TABLE publicacoes ADD COLUMN lida INTEGER DEFAULT 0")
+        db.conn.commit()
+    except Exception:
+        pass
+    db.conn.execute("UPDATE publicacoes SET lida = ? WHERE id = ?", (1 if lida else 0, pub_id))
+    db.conn.commit()
+    return {"status": "success", "id": pub_id, "lida": lida}
+
+
+@router.put("/publicacoes/{pub_id}/favorita", summary="Favoritar publicação")
+def marcar_favorita(pub_id: int, favorita: bool = Body(True)):
+    """Marca/desmarca publicação como favorita."""
+    db = get_db()
+    try:
+        db.conn.execute("ALTER TABLE publicacoes ADD COLUMN favorita INTEGER DEFAULT 0")
+        db.conn.commit()
+    except Exception:
+        pass
+    db.conn.execute("UPDATE publicacoes SET favorita = ? WHERE id = ?", (1 if favorita else 0, pub_id))
+    db.conn.commit()
+    return {"status": "success", "id": pub_id, "favorita": favorita}

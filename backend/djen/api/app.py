@@ -437,6 +437,7 @@ from djen.api.routers.validation import router as validation_router
 from djen.api.routers.webhooks import router as webhooks_router
 from djen.api.routers.metrics import router as metrics_router
 from djen.api.routers.advanced import router as advanced_router
+from djen.api.routers.notifications import router as notifications_router
 
 # Auth router (public endpoints: login, etc.)
 app.include_router(auth_router)
@@ -452,6 +453,9 @@ app.include_router(metrics_router)
 
 # Advanced configs router
 app.include_router(advanced_router)
+
+# Notifications router
+app.include_router(notifications_router)
 
 # Protected routers
 app.include_router(datajud_router)
