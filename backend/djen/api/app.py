@@ -292,6 +292,10 @@ app.add_middleware(
 
 # Security Headers Middleware
 from starlette.middleware.base import BaseHTTPMiddleware
+from starlette.middleware.gzip import GZipMiddleware
+
+# Gzip Compression
+app.add_middleware(GZipMiddleware, minimum_size=500)
 
 class SecurityHeadersMiddleware(BaseHTTPMiddleware):
     async def dispatch(self, request, call_next):
