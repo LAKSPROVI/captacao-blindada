@@ -299,6 +299,39 @@ class MetricsMiddleware(BaseHTTPMiddleware):
             response = await call_next(request)
             get_metrics().increment_requests()
             get_metrics().increment_requests_endpoint(request.url.path)
+            
+            # Auditoria automática para ações de escrita (POST/PUT/DELETE)
+            if request.method in ("POST", "PUT", "DELETE") and response.status_code < 400:
+                try:
+                    from djen.api.audit import registrar_auditoria
+                    # Extrair IP
+                    ip = request.headers.get("X-Forwarded-For", request.headers.get("X-Real-IP", request.client.host if request.client else "unknown"))
+                    # Extrair user_id do token se disponível
+                    user_id = None
+                    tenant_id = None
+                    auth_header = request.headers.get("Authorization", "")
+                    if auth_header.startswith("Bearer "):
+                        try:
+                            from jose import jwt
+                            token = auth_header.split(" ")[1]
+                            payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
+                            user_id = payload.get("sub")
+                            tenant_id = payload.get("tenant_id")
+                        except Exception:
+                            pass
+                    
+                    registrar_auditoria(
+                        action=f"{request.method}",
+                        entity_type=request.url.path,
+                        entity_id=request.method,
+                        details={"status_code": response.status_code, "method": request.method, "path": request.url.path},
+                        user_id=user_id,
+                        tenant_id=tenant_id,
+                        ip_address=ip,
+                    )
+                except Exception:
+                    pass  # Não falhar por causa de auditoria
+            
             return response
         except Exception as e:
             get_metrics().increment_errors(type(e).__name__)
