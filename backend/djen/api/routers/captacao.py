@@ -202,6 +202,47 @@ def preview_captacao(req: CaptacaoPreviewRequest):
     return service.preview(req.model_dump())
 
 
+@router.post("/{captacao_id}/clonar", summary="Clonar captacao existente")
+def clonar_captacao(captacao_id: int):
+    """Cria uma cópia da captação com nome 'Cópia de ...'."""
+    db = get_db()
+    cap = db.obter_captacao(captacao_id)
+    if not cap:
+        raise HTTPException(status_code=404, detail="Captacao nao encontrada")
+    cap = dict(cap)
+    novo_nome = f"Cópia de {cap['nome']}"
+    novo_id = db.criar_captacao(
+        nome=novo_nome,
+        tipo_busca=cap.get("tipo_busca", "processo"),
+        descricao=cap.get("descricao", ""),
+        numero_processo=cap.get("numero_processo"),
+        numero_oab=cap.get("numero_oab"),
+        uf_oab=cap.get("uf_oab"),
+        nome_parte=cap.get("nome_parte"),
+        nome_advogado=cap.get("nome_advogado"),
+        tribunal=cap.get("tribunal"),
+        tribunais=cap.get("tribunais"),
+        classe_codigo=cap.get("classe_codigo"),
+        assunto_codigo=cap.get("assunto_codigo"),
+        orgao_id=cap.get("orgao_id"),
+        tipo_comunicacao=cap.get("tipo_comunicacao"),
+        data_inicio=cap.get("data_inicio"),
+        data_fim=cap.get("data_fim"),
+        fontes=cap.get("fontes", "datajud,djen_api"),
+        intervalo_minutos=cap.get("intervalo_minutos", 120),
+        horario_inicio=cap.get("horario_inicio", "06:00"),
+        horario_fim=cap.get("horario_fim", "23:00"),
+        dias_semana=cap.get("dias_semana", "1,2,3,4,5"),
+        prioridade=cap.get("prioridade", "normal"),
+        modalidade=cap.get("modalidade", "recorrente"),
+        auto_enriquecer=cap.get("auto_enriquecer", 1),
+        notificar_whatsapp=cap.get("notificar_whatsapp", 0),
+        notificar_email=cap.get("notificar_email", 0),
+        tenant_id=cap.get("tenant_id", 1),
+    )
+    return {"status": "success", "message": f"Captacao clonada: {novo_nome}", "novo_id": novo_id}
+
+
 @router.post("/executar-todas", summary="Executar todas as captacoes pendentes")
 @limiter.limit("5/minute")
 def executar_todas(request: Request):

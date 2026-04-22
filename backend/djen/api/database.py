@@ -35,6 +35,10 @@ class Database:
             self._local.conn.row_factory = sqlite3.Row
             self._local.conn.execute("PRAGMA journal_mode=WAL")
             self._local.conn.execute("PRAGMA foreign_keys=ON")
+            self._local.conn.execute("PRAGMA cache_size=-20000")
+            self._local.conn.execute("PRAGMA synchronous=NORMAL")
+            self._local.conn.execute("PRAGMA temp_store=MEMORY")
+            self._local.conn.execute("PRAGMA mmap_size=268435456")
         return self._local.conn
 
     def _init_schema(self):
