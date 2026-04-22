@@ -291,6 +291,8 @@ app.add_middleware(
 )
 
 # Security Headers Middleware
+from starlette.middleware.base import BaseHTTPMiddleware
+
 class SecurityHeadersMiddleware(BaseHTTPMiddleware):
     async def dispatch(self, request, call_next):
         response = await call_next(request)
@@ -304,7 +306,6 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
 app.add_middleware(SecurityHeadersMiddleware)
 
 # Metrics Middleware
-from starlette.middleware.base import BaseHTTPMiddleware
 from djen.api.metrics import get_metrics
 
 class MetricsMiddleware(BaseHTTPMiddleware):
