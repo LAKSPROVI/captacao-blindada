@@ -75,6 +75,32 @@ export default function UsuariosPage() {
     }
   };
 
+  const handleEditUser = async (u: any) => {
+    const nome = prompt("Nome completo:", u.full_name) || u.full_name;
+    const role = prompt("Role (master, manager, operator, viewer):", u.role) || u.role;
+    
+    let tenantId = u.tenant_id;
+    if (isMaster) {
+      const t = prompt("ID do Tenant:", u.tenant_id?.toString());
+      if (t) tenantId = parseInt(t, 10);
+    }
+
+    const novaSenha = prompt("Nova senha (deixe vazio para manter):", "");
+
+    try {
+      await api.updateUser(u.id, {
+        full_name: nome,
+        role,
+        tenant_id: tenantId,
+        ...(novaSenha ? { password: novaSenha } : {}),
+      });
+      alert("Usuário atualizado com sucesso!");
+      fetchData();
+    } catch (e: any) {
+      alert("Erro ao atualizar: " + (e?.response?.data?.detail || e.message));
+    }
+  };
+
   if (isLoading) {
     return (
       <div className="flex h-full items-center justify-center">
@@ -148,7 +174,7 @@ export default function UsuariosPage() {
                     <td className="px-4 py-3 text-right">
                       {!isMe && (
                         <div className="flex items-center justify-end gap-2">
-                          <button onClick={() => alert("Função em desenvolvimento. Use o menu Master.")} className="p-1.5 text-gray-500 hover:text-blue-500 hover:bg-blue-500/10 rounded transition-colors" title="Editar">
+                          <button onClick={() => handleEditUser(u)} className="p-1.5 text-gray-500 hover:text-blue-500 hover:bg-blue-500/10 rounded transition-colors" title="Editar">
                             <Edit2 className="w-4 h-4" />
                           </button>
                           <button onClick={() => handleDeleteUser(u.id)} className="p-1.5 text-gray-500 hover:text-red-500 hover:bg-red-500/10 rounded transition-colors" title="Remover">

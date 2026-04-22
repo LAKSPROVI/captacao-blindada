@@ -198,6 +198,16 @@ export interface AIProvider {
   id: string;
   name: string;
   models: string[];
+  details?: {
+    id: string;
+    name: string;
+    description: string;
+    input_tokens: number;
+    output_tokens: number;
+    thinking: boolean;
+    recommended_for: string[];
+  }[];
+  api_key_configured?: boolean;
 }
 
 export interface AIModelsResponse {
