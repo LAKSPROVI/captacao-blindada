@@ -2,6 +2,7 @@
 
 import { AuthProvider, useAuth } from "@/lib/auth-context";
 import { Sidebar } from "@/components/Sidebar";
+import { ToastProvider } from "@/components/Toast";
 import { usePathname } from "next/navigation";
 import { LoadingSpinner } from "@/components/LoadingSpinner";
 
@@ -36,7 +37,7 @@ function LayoutInner({ children }: { children: React.ReactNode }) {
   return (
     <div className="flex h-screen overflow-hidden">
       <Sidebar />
-      <main className="flex-1 overflow-y-auto p-6">{children}</main>
+      <main className="flex-1 overflow-y-auto p-4 md:p-6">{children}</main>
     </div>
   );
 }
@@ -44,7 +45,9 @@ function LayoutInner({ children }: { children: React.ReactNode }) {
 export function ClientLayout({ children }: { children: React.ReactNode }) {
   return (
     <AuthProvider>
-      <LayoutInner>{children}</LayoutInner>
+      <ToastProvider>
+        <LayoutInner>{children}</LayoutInner>
+      </ToastProvider>
     </AuthProvider>
   );
 }
