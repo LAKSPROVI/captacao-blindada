@@ -181,7 +181,10 @@ class Database:
             );
 
             CREATE INDEX IF NOT EXISTS idx_audit_logs_action ON audit_logs(action);
+            CREATE INDEX IF NOT EXISTS idx_audit_logs_criado ON audit_logs(criado_em);
+            CREATE INDEX IF NOT EXISTS idx_audit_logs_user ON audit_logs(user_id);
             CREATE INDEX IF NOT EXISTS idx_system_errors_status ON system_errors(status);
+            CREATE INDEX IF NOT EXISTS idx_system_errors_criado ON system_errors(criado_em);
 
 
 

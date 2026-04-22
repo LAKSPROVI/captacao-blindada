@@ -6,8 +6,9 @@ Implements JWT-based authentication with role-based access control.
 
 import logging
 import os
+import time
 from datetime import datetime, timedelta, timezone
-from typing import Optional
+from typing import Optional, Dict
 
 from fastapi import APIRouter, Depends, HTTPException, status, Request
 from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
@@ -238,6 +239,41 @@ def require_master_or_tenant_admin():
 
 
 # ---------------------------------------------------------------------------
+# Bloqueio de Login por tentativas falhadas
+# ---------------------------------------------------------------------------
+_login_attempts: Dict[str, list] = {}
+_LOGIN_MAX_ATTEMPTS = 5
+_LOGIN_BLOCK_SECONDS = 300  # 5 minutos
+
+
+def _check_login_blocked(username: str) -> bool:
+    """Verifica se o usuário está bloqueado por tentativas falhadas."""
+    attempts = _login_attempts.get(username, [])
+    if len(attempts) < _LOGIN_MAX_ATTEMPTS:
+        return False
+    last_attempt = attempts[-1]
+    if time.time() - last_attempt < _LOGIN_BLOCK_SECONDS:
+        return True
+    # Expirou o bloqueio, limpar
+    _login_attempts[username] = []
+    return False
+
+
+def _register_failed_attempt(username: str):
+    """Registra tentativa falhada de login."""
+    if username not in _login_attempts:
+        _login_attempts[username] = []
+    _login_attempts[username].append(time.time())
+    # Manter apenas últimas 10
+    _login_attempts[username] = _login_attempts[username][-10:]
+
+
+def _clear_attempts(username: str):
+    """Limpa tentativas após login bem-sucedido."""
+    _login_attempts.pop(username, None)
+
+
+# ---------------------------------------------------------------------------
 # Router
 # ---------------------------------------------------------------------------
 
@@ -248,8 +284,20 @@ router = APIRouter(prefix="/api/auth", tags=["Autenticacao"])
 @limiter.limit("5/minute")
 async def login(request: Request, form_data: OAuth2PasswordRequestForm = Depends()):
     """Authenticate with username/password and receive a JWT access token."""
+    # Verificar bloqueio
+    if _check_login_blocked(form_data.username):
+        registrar_auditoria("LOGIN_BLOCKED", "auth", form_data.username, 
+                          {"reason": "too_many_attempts", "ip": request.client.host if request.client else "unknown"})
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail=f"Conta bloqueada por {_LOGIN_BLOCK_SECONDS // 60} minutos. Muitas tentativas falhadas.",
+        )
+    
     user = authenticate_user(form_data.username, form_data.password)
     if user is None:
+        _register_failed_attempt(form_data.username)
+        registrar_auditoria("LOGIN_FAILED", "auth", form_data.username,
+                          {"ip": request.client.host if request.client else "unknown"})
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Usuario ou senha incorretos",
@@ -262,6 +310,7 @@ async def login(request: Request, form_data: OAuth2PasswordRequestForm = Depends
         expires_delta=expires,
     )
     
+    _clear_attempts(form_data.username)
     registrar_auditoria("LOG_IN", "auth", str(user.id), {"username": user.username, "tenant": user.tenant_id}, user.id, user.tenant_id)
     
     return Token(
