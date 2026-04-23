@@ -948,6 +948,81 @@ class ApiClient {
     const { data } = await this.client.post(`/errors/${errorId}/resolve`);
     return data;
   }
+
+  // Analytics
+  async getAnalyticsPubPorDia(dias: number = 30): Promise<any> {
+    const { data } = await this.client.get("/analytics/publicacoes-por-dia", { params: { dias } });
+    return data;
+  }
+
+  async getAnalyticsPubPorTribunal(): Promise<any> {
+    const { data } = await this.client.get("/analytics/publicacoes-por-tribunal");
+    return data;
+  }
+
+  async getAnalyticsExecPorStatus(): Promise<any> {
+    const { data } = await this.client.get("/analytics/execucoes-por-status");
+    return data;
+  }
+
+  async getAnalyticsTempoMedio(): Promise<any> {
+    const { data } = await this.client.get("/analytics/tempo-medio-execucao");
+    return data;
+  }
+
+  async getAnalyticsTaxaNovos(dias: number = 30): Promise<any> {
+    const { data } = await this.client.get("/analytics/taxa-novos", { params: { dias } });
+    return data;
+  }
+
+  async getAnalyticsHorasPico(): Promise<any> {
+    const { data } = await this.client.get("/analytics/horas-pico");
+    return data;
+  }
+
+  async getAnalyticsResumoMensal(): Promise<any> {
+    const { data } = await this.client.get("/analytics/resumo-mensal");
+    return data;
+  }
+
+  // Sidebar contadores
+  async getSidebarContadores(): Promise<any> {
+    const { data } = await this.client.get("/contadores");
+    return data;
+  }
+
+  // Agendamentos captação
+  async agendarCaptacao(id: number, data_execucao: string): Promise<any> {
+    const { data } = await this.client.post(`/captacao/${id}/agendar-data`, null, { params: { data_execucao } });
+    return data;
+  }
+
+  async listarAgendamentos(id: number): Promise<any> {
+    const { data } = await this.client.get(`/captacao/${id}/agendamentos`);
+    return data;
+  }
+
+  async configurarLimiteCaptacao(id: number, max_resultados: number, max_paginas: number): Promise<any> {
+    const { data } = await this.client.put(`/captacao/${id}/limite`, null, { params: { max_resultados, max_paginas } });
+    return data;
+  }
+
+  // Upload CSV processos
+  async uploadCSVProcessos(processos: Array<{numero_processo: string; tribunal?: string}>): Promise<any> {
+    const { data } = await this.client.post("/config/processos/upload-csv", processos);
+    return data;
+  }
+
+  // Suspender/reativar tenant
+  async suspenderTenant(id: number): Promise<any> {
+    const { data } = await this.client.put(`/admin/tenants/${id}/suspender`);
+    return data;
+  }
+
+  async reativarTenant(id: number): Promise<any> {
+    const { data } = await this.client.put(`/admin/tenants/${id}/reativar`);
+    return data;
+  }
 }
 
 // =========================================================================

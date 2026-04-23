@@ -516,6 +516,10 @@ app.include_router(billing_router)
 app.include_router(audit_router)
 app.include_router(errors_router)
 
+# Analytics router
+from djen.api.routers.analytics import router as analytics_router
+app.include_router(analytics_router)
+
 
 # =========================================================================
 # Root
