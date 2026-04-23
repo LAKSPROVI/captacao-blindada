@@ -136,6 +136,26 @@ def historico_buscas(limite: int = Query(50, ge=1, le=500)):
     return {"status": "success", "total": len(rows), "buscas": [dict(r) for r in rows]}
 
 
+@router.get("/buscar-por-parte", summary="Buscar por nome de parte")
+def buscar_por_parte(
+    nome: str = Query(..., min_length=3, description="Nome da parte"),
+    limite: int = Query(50, ge=1, le=500),
+):
+    """Busca publicações por nome de parte ou advogado."""
+    db = get_db()
+    termo = f"%{nome}%"
+    rows = db.conn.execute("""
+        SELECT DISTINCT numero_processo, tribunal, partes, advogados,
+               COUNT(*) as total_publicacoes, MAX(data_publicacao) as ultima
+        FROM publicacoes
+        WHERE partes LIKE ? OR advogados LIKE ? OR conteudo LIKE ?
+        GROUP BY numero_processo
+        ORDER BY total_publicacoes DESC
+        LIMIT ?
+    """, (termo, termo, termo, limite)).fetchall()
+    return {"status": "success", "nome": nome, "total": len(rows), "processos": [dict(r) for r in rows]}
+
+
 @router.post("/prazos/calcular", summary="Calcular prazo processual")
 def calcular_prazo(
     data_inicio: str = Body(..., description="Data início (YYYY-MM-DD)"),

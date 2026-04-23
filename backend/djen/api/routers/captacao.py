@@ -104,6 +104,7 @@ def listar_captacoes(
     ativo: Optional[bool] = Query(None, description="Filtrar por ativo/inativo"),
     tipo_busca: Optional[str] = Query(None, description="Filtrar por tipo"),
     prioridade: Optional[str] = Query(None, description="Filtrar por prioridade"),
+    busca: Optional[str] = Query(None, description="Buscar por nome"),
     limit: int = Query(DEFAULT_LIMIT, ge=1, le=MAX_LIMIT, description="Limite de resultados"),
     offset: int = Query(0, ge=0, description="Offset para paginacao"),
     no_cache: bool = Query(False, description="Ignorar cache"),
@@ -119,6 +120,12 @@ def listar_captacoes(
         _captacao_list_cache["timestamp"] = time.time()
     
     all_captacoes = _captacao_list_cache["data"]
+    
+    # Filtro por nome (busca textual)
+    if busca:
+        busca_lower = busca.lower()
+        all_captacoes = [c for c in all_captacoes if busca_lower in (dict(c).get("nome", "") or "").lower()]
+    
     total = len(all_captacoes)
     has_more = (offset + limit) < total
     next_offset = offset + limit if has_more else None

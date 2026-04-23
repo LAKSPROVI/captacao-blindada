@@ -227,4 +227,27 @@ def stats_tenant(tenant_id: int, current_user: UserInDB = Depends(require_role("
         "execucoes": execucoes,
         "acoes_auditoria": acoes,
     }
+
+
+@router.put("/tenants/{tenant_id}/suspender")
+def suspender_tenant(tenant_id: int, current_user: UserInDB = Depends(require_role("master"))):
+    """Suspende um tenant."""
+    db = get_database()
+    try:
+        db.conn.execute("ALTER TABLE tenants ADD COLUMN suspenso INTEGER DEFAULT 0")
+        db.conn.commit()
+    except Exception:
+        pass
+    db.conn.execute("UPDATE tenants SET suspenso = 1 WHERE id = ?", (tenant_id,))
+    db.conn.commit()
+    return {"status": "success", "message": f"Tenant {tenant_id} suspenso"}
+
+
+@router.put("/tenants/{tenant_id}/reativar")
+def reativar_tenant(tenant_id: int, current_user: UserInDB = Depends(require_role("master"))):
+    """Reativa um tenant suspenso."""
+    db = get_database()
+    db.conn.execute("UPDATE tenants SET suspenso = 0 WHERE id = ?", (tenant_id,))
+    db.conn.commit()
+    return {"status": "success", "message": f"Tenant {tenant_id} reativado"}
     return None
