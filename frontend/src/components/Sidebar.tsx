@@ -38,7 +38,12 @@ const navItems = [
 export function Sidebar() {
   const pathname = usePathname();
   const { user, logout } = useAuth();
-  const [collapsed, setCollapsed] = useState(false);
+  const [collapsed, setCollapsed] = useState(() => {
+    if (typeof window !== "undefined") {
+      return localStorage.getItem("sidebar_collapsed") === "true";
+    }
+    return false;
+  });
   const [darkMode, setDarkMode] = useState(false);
 
   useEffect(() => {
@@ -74,7 +79,11 @@ export function Sidebar() {
           )}
         </Link>
         <button
-          onClick={() => setCollapsed(!collapsed)}
+          onClick={() => {
+            const next = !collapsed;
+            setCollapsed(next);
+            localStorage.setItem("sidebar_collapsed", String(next));
+          }}
           className="p-1 rounded-md text-[var(--muted-foreground)] hover:bg-[var(--secondary)] transition-colors"
           title={collapsed ? "Expandir menu" : "Recolher menu"}
         >
