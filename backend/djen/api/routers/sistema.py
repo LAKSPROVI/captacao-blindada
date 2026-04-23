@@ -88,8 +88,8 @@ def versao():
         "name": "Captação Blindada",
         "description": "Sistema de Captação Jurídica Automatizada",
         "api_docs": "/docs",
-    "total_endpoints": 60,
-    "total_implementacoes": 99,
+    "total_endpoints": 67,
+    "total_implementacoes": 106,
     }
 
 
