@@ -486,6 +486,10 @@ app.include_router(agenda_router)
 from djen.api.routers.contadores import router as contadores_router
 app.include_router(contadores_router)
 
+# Busca Global router
+from djen.api.routers.busca_global import router as busca_global_router
+app.include_router(busca_global_router)
+
 # Notifications router
 app.include_router(notifications_router)
 
