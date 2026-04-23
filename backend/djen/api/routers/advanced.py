@@ -363,3 +363,56 @@ def importar_captacoes(captacoes: list = Body(...)):
         except Exception as e:
             erros.append({"nome": cap.get("nome"), "erro": str(e)})
     return {"status": "success", "importados": importados, "erros": erros}
+
+
+# =============================================================================
+# Alerta Saldo Baixo
+# =============================================================================
+
+@router.get("/billing/alerta-saldo", summary="Verificar saldo baixo")
+def alerta_saldo(threshold: int = Body(1000)):
+    """Verifica se o saldo está abaixo do threshold."""
+    from djen.api.database import get_database
+    db = get_database()
+    try:
+        tenant = db.conn.execute("SELECT * FROM tenants LIMIT 1").fetchone()
+        if not tenant:
+            return {"status": "ok", "message": "Nenhum tenant encontrado"}
+        saldo = dict(tenant).get("saldo_tokens", 0)
+        baixo = saldo < threshold
+        return {
+            "status": "warning" if baixo else "ok",
+            "saldo_atual": saldo,
+            "threshold": threshold,
+            "alerta": baixo,
+            "message": f"Saldo baixo! Apenas {saldo} tokens restantes." if baixo else "Saldo OK",
+        }
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
+
+
+# =============================================================================
+# Upload CSV de Processos
+# =============================================================================
+
+@router.post("/processos/upload-csv", summary="Importar processos via CSV")
+def upload_csv_processos(processos: list = Body(..., description="Lista de {numero_processo, tribunal}")):
+    """Importa múltiplos processos para monitoramento."""
+    from djen.api.database import get_database
+    db = get_database()
+    importados = 0
+    erros = []
+    for p in processos:
+        try:
+            num = p.get("numero_processo", "").strip()
+            if not num:
+                continue
+            db.registrar_processo_monitorado(
+                numero_processo=num,
+                tribunal=p.get("tribunal"),
+                origem="csv_import",
+            )
+            importados += 1
+        except Exception as e:
+            erros.append({"numero_processo": p.get("numero_processo"), "erro": str(e)})
+    return {"status": "success", "importados": importados, "erros": erros}
