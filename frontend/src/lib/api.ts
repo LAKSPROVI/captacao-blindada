@@ -1054,6 +1054,74 @@ class ApiClient {
     const { data } = await this.client.post("/extras/limpar-publicacoes-duplicadas");
     return data;
   }
+
+  // Integrações
+  async getIntegracaoStatus(): Promise<any> {
+    const { data } = await this.client.get("/integracoes/status");
+    return data;
+  }
+
+  async testTelegram(message: string): Promise<any> {
+    const { data } = await this.client.post("/integracoes/telegram/test", message);
+    return data;
+  }
+
+  // Automações
+  async listarRegras(ativo?: boolean): Promise<any> {
+    const { data } = await this.client.get("/automacoes/regras", { params: ativo !== undefined ? { ativo } : {} });
+    return data;
+  }
+
+  async criarRegra(params: { nome: string; tipo: string; condicao: string; acao: string }): Promise<any> {
+    const { data } = await this.client.post("/automacoes/regras", params);
+    return data;
+  }
+
+  async toggleRegra(id: number): Promise<any> {
+    const { data } = await this.client.put(`/automacoes/regras/${id}/toggle`);
+    return data;
+  }
+
+  async removerRegra(id: number): Promise<any> {
+    const { data } = await this.client.delete(`/automacoes/regras/${id}`);
+    return data;
+  }
+
+  async getResumoAutomacoes(): Promise<any> {
+    const { data } = await this.client.get("/automacoes/resumo");
+    return data;
+  }
+
+  // Tools
+  async formatarCNJ(numero: string): Promise<any> {
+    const { data } = await this.client.post("/tools/formatar-cnj", numero);
+    return data;
+  }
+
+  async calcularDiasUteis(data_inicio: string, data_fim: string): Promise<any> {
+    const { data } = await this.client.post("/tools/calcular-dias-uteis", { data_inicio, data_fim });
+    return data;
+  }
+
+  async getEstatisticasGerais(): Promise<any> {
+    const { data } = await this.client.get("/tools/estatisticas-gerais");
+    return data;
+  }
+
+  async getUptime(): Promise<any> {
+    const { data } = await this.client.get("/tools/uptime");
+    return data;
+  }
+
+  async vacuumDB(): Promise<any> {
+    const { data } = await this.client.post("/tools/vacuum");
+    return data;
+  }
+
+  async getIndicesDB(): Promise<any> {
+    const { data } = await this.client.get("/tools/indices-db");
+    return data;
+  }
 }
 
 // =========================================================================
