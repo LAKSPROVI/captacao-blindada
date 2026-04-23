@@ -18,6 +18,7 @@ import {
   Pause,
   RotateCcw,
   Trash2,
+  Copy,
   Clock,
   CheckCircle2,
   AlertCircle,
@@ -163,6 +164,17 @@ export default function CaptacaoPage() {
       setError(`Erro ao executar captacao #${id}: ${msg}`);
     } finally {
       setExecutingId(null);
+    }
+  };
+
+  const handleClonar = async (id: number) => {
+    try {
+      const result = await api.clonarCaptacao(id);
+      setSuccess(result.message || "Captação clonada com sucesso!");
+      loadData();
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : "Erro desconhecido";
+      setError(`Erro ao clonar: ${msg}`);
     }
   };
 
@@ -352,6 +364,7 @@ export default function CaptacaoPage() {
               isExecuting={executingId === cap.id}
               onToggleExpand={() => handleToggleExpand(cap.id)}
               onExecutar={() => handleExecutar(cap.id)}
+              onClonar={() => handleClonar(cap.id)}
               onPausar={() => handlePausar(cap.id)}
               onRetomar={() => handleRetomar(cap.id)}
               onDesativar={() => handleDesativar(cap.id)}
@@ -379,6 +392,7 @@ function CaptacaoCard({
   isExecuting,
   onToggleExpand,
   onExecutar,
+  onClonar,
   onPausar,
   onRetomar,
   onDesativar,
@@ -394,6 +408,7 @@ function CaptacaoCard({
   isExecuting: boolean;
   onToggleExpand: () => void;
   onExecutar: () => void;
+  onClonar: () => void;
   onPausar: () => void;
   onRetomar: () => void;
   onDesativar: () => void;
@@ -493,6 +508,14 @@ function CaptacaoCard({
             title="Desativar"
           >
             <Trash2 className="h-3 w-3" />
+          </button>
+
+          <button
+            onClick={onClonar}
+            className="rounded-md border px-2 py-1.5 text-xs text-blue-500 hover:bg-blue-50 dark:hover:bg-blue-900/20 transition-colors"
+            title="Clonar captação"
+          >
+            <Copy className="h-3 w-3" />
           </button>
 
           <button
