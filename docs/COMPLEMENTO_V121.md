@@ -1,6 +1,6 @@
 # Complemento de Implementações — Captacao Peticao Blindada
 
-> Versao: 1.3.0 | Atualizado: 2026-04-22 | Para: Desenvolvedores e DevOps
+> Versao: 1.3.1 | Atualizado: 2026-04-22 | Para: Desenvolvedores e DevOps
 
 ---
 
