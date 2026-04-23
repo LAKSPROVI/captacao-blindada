@@ -783,6 +783,41 @@ class ApiClient {
     return data;
   }
 
+  // Busca Global
+  async buscaGlobal(q: string, limite: number = 50): Promise<any> {
+    const { data } = await this.client.get("/busca-global", { params: { q, limite } });
+    return data;
+  }
+
+  // Captação Estatísticas
+  async getCaptacaoEstatisticas(id: number): Promise<any> {
+    const { data } = await this.client.get(`/captacao/${id}/estatisticas`);
+    return data;
+  }
+
+  // Captação Alertas
+  async getCaptacaoAlertas(dias: number = 3): Promise<any> {
+    const { data } = await this.client.get("/captacao/alertas/sem-resultados", { params: { dias } });
+    return data;
+  }
+
+  // Retry Captação
+  async retryCaptacao(id: number, max_tentativas: number = 3): Promise<any> {
+    const { data } = await this.client.post(`/captacao/${id}/retry`, null, { params: { max_tentativas } });
+    return data;
+  }
+
+  // Health detalhado
+  async getHealthDatabase(): Promise<any> {
+    const { data } = await this.client.get("/health/database");
+    return data;
+  }
+
+  async getHealthSystem(): Promise<any> {
+    const { data } = await this.client.get("/health/system");
+    return data;
+  }
+
   async verificarProcessosAgora(): Promise<{ status: string; verificados?: number; atualizados?: number }> {
     const { data } = await this.client.post<{ status: string; verificados?: number; atualizados?: number }>("/processos/verificar-agora");
     return data;
