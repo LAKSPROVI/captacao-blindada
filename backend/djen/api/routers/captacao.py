@@ -310,8 +310,154 @@ def relatorio_sistema():
 
 
 # =========================================================================
-# Rotas parametrizadas
+# Notificações por Captação
 # =========================================================================
+
+@router.put("/{captacao_id}/notificacoes", summary="Configurar notificações da captação")
+def configurar_notificacoes(
+    captacao_id: int,
+    notificar_email: bool = Query(False),
+    notificar_whatsapp: bool = Query(False),
+    email_destino: Optional[str] = Query(None),
+    whatsapp_destino: Optional[str] = Query(None),
+):
+    """Configura notificações para uma captação específica."""
+    db = get_db()
+    cap = db.obter_captacao(captacao_id)
+    if not cap:
+        raise HTTPException(status_code=404, detail="Captacao nao encontrada")
+    
+    db.conn.execute("""
+        UPDATE captacoes SET notificar_email=?, notificar_whatsapp=? WHERE id=?
+    """, (1 if notificar_email else 0, 1 if notificar_whatsapp else 0, captacao_id))
+    db.conn.commit()
+    
+    return {
+        "status": "success",
+        "captacao_id": captacao_id,
+        "notificar_email": notificar_email,
+        "notificar_whatsapp": notificar_whatsapp,
+    }
+
+
+# =========================================================================
+# Alertas de Captações sem Resultados
+# =========================================================================
+
+@router.get("/alertas/sem-resultados", summary="Captações sem resultados recentes")
+def alertas_sem_resultados(dias: int = Query(3, ge=1, le=30)):
+    """Lista captações ativas que não encontraram novos resultados nos últimos X dias."""
+    db = get_db()
+    rows = db.conn.execute("""
+        SELECT c.id, c.nome, c.tipo_busca, c.ultima_execucao, c.total_execucoes, c.total_novos,
+               (SELECT MAX(e.inicio) FROM execucoes_captacao e WHERE e.captacao_id = c.id AND e.novos_resultados > 0) as ultimo_novo
+        FROM captacoes c
+        WHERE c.ativo = 1
+        AND (
+            c.ultima_execucao IS NULL
+            OR NOT EXISTS (
+                SELECT 1 FROM execucoes_captacao e 
+                WHERE e.captacao_id = c.id 
+                AND e.novos_resultados > 0 
+                AND date(e.inicio) >= date('now', 'localtime', ? || ' days')
+            )
+        )
+        ORDER BY c.ultima_execucao ASC
+    """, (f"-{dias}",)).fetchall()
+    
+    return {
+        "status": "success",
+        "dias": dias,
+        "total": len(rows),
+        "captacoes": [dict(r) for r in rows],
+    }
+
+
+# =========================================================================
+# Comparação entre Execuções (Diff)
+# =========================================================================
+
+@router.get("/{captacao_id}/diff", summary="Comparar duas execuções")
+def diff_execucoes(
+    captacao_id: int,
+    exec_a: int = Query(..., description="ID da execução A"),
+    exec_b: int = Query(..., description="ID da execução B"),
+):
+    """Compara resultados entre duas execuções da mesma captação."""
+    db = get_db()
+    
+    a = db.conn.execute("SELECT * FROM execucoes_captacao WHERE id=? AND captacao_id=?", (exec_a, captacao_id)).fetchone()
+    b = db.conn.execute("SELECT * FROM execucoes_captacao WHERE id=? AND captacao_id=?", (exec_b, captacao_id)).fetchone()
+    
+    if not a or not b:
+        raise HTTPException(status_code=404, detail="Execução não encontrada")
+    
+    a_dict = dict(a)
+    b_dict = dict(b)
+    
+    return {
+        "status": "success",
+        "captacao_id": captacao_id,
+        "execucao_a": {
+            "id": a_dict["id"],
+            "inicio": a_dict["inicio"],
+            "total_resultados": a_dict["total_resultados"],
+            "novos_resultados": a_dict["novos_resultados"],
+            "status": a_dict["status"],
+        },
+        "execucao_b": {
+            "id": b_dict["id"],
+            "inicio": b_dict["inicio"],
+            "total_resultados": b_dict["total_resultados"],
+            "novos_resultados": b_dict["novos_resultados"],
+            "status": b_dict["status"],
+        },
+        "diff": {
+            "total_resultados": b_dict["total_resultados"] - a_dict["total_resultados"],
+            "novos_resultados": b_dict["novos_resultados"] - a_dict["novos_resultados"],
+        }
+    }
+
+
+# =========================================================================
+# Retry com Backoff
+# =========================================================================
+
+@router.post("/{captacao_id}/retry", summary="Retry com backoff exponencial")
+def retry_captacao(captacao_id: int, max_tentativas: int = Query(3, ge=1, le=5)):
+    """Executa captação com retry automático e backoff exponencial."""
+    import time as _time
+    
+    db = get_db()
+    cap = db.obter_captacao(captacao_id)
+    if not cap:
+        raise HTTPException(status_code=404, detail="Captacao nao encontrada")
+    
+    service = get_service()
+    tentativas = []
+    
+    for i in range(max_tentativas):
+        try:
+            result = service.executar_captacao(captacao_id)
+            tentativas.append({"tentativa": i + 1, "status": "success", "resultado": result})
+            return {
+                "status": "success",
+                "tentativas": len(tentativas),
+                "resultado": result,
+                "historico_tentativas": tentativas,
+            }
+        except Exception as e:
+            wait = 2 ** i  # 1s, 2s, 4s
+            tentativas.append({"tentativa": i + 1, "status": "error", "erro": str(e), "wait_seconds": wait})
+            if i < max_tentativas - 1:
+                _time.sleep(wait)
+    
+    return {
+        "status": "failed",
+        "message": f"Falhou após {max_tentativas} tentativas",
+        "tentativas": len(tentativas),
+        "historico_tentativas": tentativas,
+    }
 
 @router.get("/{captacao_id}", summary="Detalhes de uma captacao")
 def obter_captacao(captacao_id: int):
