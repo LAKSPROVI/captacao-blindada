@@ -667,6 +667,122 @@ class ApiClient {
     return data;
   }
 
+  // Prazos
+  async criarPrazo(params: { numero_processo: string; descricao: string; data_inicio: string; dias_uteis: number; tipo?: string }): Promise<any> {
+    const { data } = await this.client.post("/prazos/criar", params);
+    return data;
+  }
+
+  async listarPrazos(status: string = "ativo"): Promise<any> {
+    const { data } = await this.client.get("/prazos/listar", { params: { status } });
+    return data;
+  }
+
+  async proximosPrazos(dias: number = 7): Promise<any> {
+    const { data } = await this.client.get("/prazos/proximos", { params: { dias } });
+    return data;
+  }
+
+  async concluirPrazo(id: number): Promise<any> {
+    const { data } = await this.client.put(`/prazos/${id}/concluir`);
+    return data;
+  }
+
+  async removerPrazo(id: number): Promise<any> {
+    const { data } = await this.client.delete(`/prazos/${id}`);
+    return data;
+  }
+
+  // Favoritos e Tags
+  async listarFavoritos(tipo?: string): Promise<any> {
+    const { data } = await this.client.get("/favoritos", { params: tipo ? { tipo } : {} });
+    return data;
+  }
+
+  async adicionarFavorito(params: { tipo: string; referencia_id: number; titulo?: string; cor?: string }): Promise<any> {
+    const { data } = await this.client.post("/favoritos", params);
+    return data;
+  }
+
+  async removerFavorito(tipo: string, referencia_id: number): Promise<any> {
+    const { data } = await this.client.delete(`/favoritos/${tipo}/${referencia_id}`);
+    return data;
+  }
+
+  async listarTags(): Promise<any> {
+    const { data } = await this.client.get("/favoritos/tags");
+    return data;
+  }
+
+  async criarTag(params: { nome: string; cor?: string }): Promise<any> {
+    const { data } = await this.client.post("/favoritos/tags", params);
+    return data;
+  }
+
+  // Agenda
+  async criarCompromisso(params: { titulo: string; data_evento: string; tipo?: string; numero_processo?: string; hora_evento?: string; local?: string }): Promise<any> {
+    const { data } = await this.client.post("/agenda/criar", params);
+    return data;
+  }
+
+  async listarCompromissos(status: string = "pendente"): Promise<any> {
+    const { data } = await this.client.get("/agenda/listar", { params: { status } });
+    return data;
+  }
+
+  async compromissosHoje(): Promise<any> {
+    const { data } = await this.client.get("/agenda/hoje");
+    return data;
+  }
+
+  async proximosCompromissos(dias: number = 7): Promise<any> {
+    const { data } = await this.client.get("/agenda/proximos", { params: { dias } });
+    return data;
+  }
+
+  async concluirCompromisso(id: number): Promise<any> {
+    const { data } = await this.client.put(`/agenda/${id}/concluir`);
+    return data;
+  }
+
+  // Contadores
+  async getContadores(): Promise<any> {
+    const { data } = await this.client.get("/contadores");
+    return data;
+  }
+
+  // Dashboard
+  async getDashboardResumo(): Promise<any> {
+    const { data } = await this.client.get("/dashboard/resumo-completo");
+    return data;
+  }
+
+  async getDashboardEvolucao(dias: number = 30): Promise<any> {
+    const { data } = await this.client.get("/dashboard/evolucao", { params: { dias } });
+    return data;
+  }
+
+  async getDashboardTribunais(): Promise<any> {
+    const { data } = await this.client.get("/dashboard/tribunais");
+    return data;
+  }
+
+  async getDashboardProximas(): Promise<any> {
+    const { data } = await this.client.get("/dashboard/proximas-execucoes");
+    return data;
+  }
+
+  // Relatórios
+  async getRelatorioSemanal(): Promise<any> {
+    const { data } = await this.client.get("/relatorios/semanal");
+    return data;
+  }
+
+  async getRelatorioDiario(): Promise<any> {
+    const { data } = await this.client.get("/relatorios/diario");
+    return data;
+  }
+
   async verificarProcessosAgora(): Promise<{ status: string; verificados?: number; atualizados?: number }> {
     const { data } = await this.client.post<{ status: string; verificados?: number; atualizados?: number }>("/processos/verificar-agora");
     return data;
