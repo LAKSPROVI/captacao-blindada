@@ -134,3 +134,53 @@ def reset_circuits():
     
     reset_all_circuits()
     return {"status": "success", "message": "Todos os circuits foram resetados"}
+
+
+@router.get("/api/health/database", summary="Saúde detalhada do banco")
+def health_database():
+    """Retorna informações detalhadas do banco de dados."""
+    from djen.api.database import get_database
+    db = get_database()
+    
+    try:
+        tables = db.conn.execute("SELECT name FROM sqlite_master WHERE type='table' ORDER BY name").fetchall()
+        table_stats = {}
+        for t in tables:
+            name = t["name"]
+            count = db.conn.execute(f"SELECT COUNT(*) as c FROM [{name}]").fetchone()["c"]
+            table_stats[name] = count
+        
+        db_size = db.conn.execute("SELECT page_count * page_size as size FROM pragma_page_count(), pragma_page_size()").fetchone()["size"]
+        wal_mode = db.conn.execute("PRAGMA journal_mode").fetchone()[0]
+        
+        return {
+            "status": "ok",
+            "database": db.db_path,
+            "size_bytes": db_size,
+            "size_mb": round(db_size / 1024 / 1024, 2),
+            "journal_mode": wal_mode,
+            "tables": table_stats,
+            "total_tables": len(table_stats),
+        }
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
+
+
+@router.get("/api/health/system", summary="Informações do sistema")
+def health_system():
+    """Retorna informações do sistema operacional e runtime."""
+    import platform
+    import sys
+    import os
+    from datetime import datetime
+    
+    return {
+        "status": "ok",
+        "python_version": sys.version,
+        "platform": platform.platform(),
+        "hostname": platform.node(),
+        "timezone": os.environ.get("TZ", "UTC"),
+        "datetime": datetime.now().isoformat(),
+        "pid": os.getpid(),
+        "cpu_count": os.cpu_count(),
+    }
