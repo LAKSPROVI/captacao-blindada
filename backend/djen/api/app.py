@@ -458,6 +458,10 @@ app.include_router(metrics_router)
 # Advanced configs router
 app.include_router(advanced_router)
 
+# Relatorios router
+from djen.api.routers.relatorios import router as relatorios_router
+app.include_router(relatorios_router)
+
 # Notifications router
 app.include_router(notifications_router)
 
