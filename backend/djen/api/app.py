@@ -466,6 +466,10 @@ app.include_router(relatorios_router)
 from djen.api.routers.dashboard import router as dashboard_router
 app.include_router(dashboard_router)
 
+# Busca Unificada router
+from djen.api.routers.busca_unificada import router as busca_unificada_router
+app.include_router(busca_unificada_router)
+
 # Notifications router
 app.include_router(notifications_router)
 
