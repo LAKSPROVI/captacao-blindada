@@ -528,6 +528,10 @@ app.include_router(extras_router)
 from djen.api.routers.tools import router as tools_router
 app.include_router(tools_router)
 
+# Integracoes router
+from djen.api.routers.integracoes import router as integracoes_router
+app.include_router(integracoes_router)
+
 
 # =========================================================================
 # Root

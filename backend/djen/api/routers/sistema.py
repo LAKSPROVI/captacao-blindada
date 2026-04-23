@@ -25,6 +25,15 @@ VERSION = "1.5.0"
 BUILD_DATE = "2026-04-23"
 
 CHANGELOG = [
+    {"version": "1.5.2", "date": "2026-04-23", "changes": [
+        "6 endpoints ferramentas (formatar CNJ, dias úteis, vacuum, uptime)",
+        "9 endpoints extras (batch insert, duplicadas, saúde completa)",
+        "7 endpoints analytics (evolução, tribunais, horas pico)",
+        "6 endpoints integrações (Telegram, webhook receiver, status)",
+        "Atalhos de teclado (Ctrl+K, Ctrl+1-3)",
+        "Componente Tooltip",
+        "130 implementações no total",
+    ]},
     {"version": "1.5.0", "date": "2026-04-23", "changes": [
         "Agendamento por data específica para captações",
         "Limite configurável por captação (max_resultados, max_paginas)",
@@ -88,8 +97,8 @@ def versao():
         "name": "Captação Blindada",
         "description": "Sistema de Captação Jurídica Automatizada",
         "api_docs": "/docs",
-    "total_endpoints": 82,
-    "total_implementacoes": 121,
+    "total_endpoints": 89,
+    "total_implementacoes": 130,
     }
 
 
