@@ -546,6 +546,73 @@ def historico_alteracoes(captacao_id: int, limite: int = Query(50, ge=1, le=200)
     return {"status": "success", "captacao_id": captacao_id, "total": len(rows), "alteracoes": [dict(r) for r in rows]}
 
 
+@router.post("/{captacao_id}/agendar-data", summary="Agendar execução para data específica")
+def agendar_data(
+    captacao_id: int,
+    data_execucao: str = Query(..., description="Data e hora (YYYY-MM-DD HH:MM)"),
+):
+    """Agenda execução única para data e hora específica."""
+    db = get_db()
+    cap = db.obter_captacao(captacao_id)
+    if not cap:
+        raise HTTPException(status_code=404, detail="Captacao nao encontrada")
+    try:
+        db.conn.execute("""
+            CREATE TABLE IF NOT EXISTS captacao_agendamentos (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                captacao_id INTEGER NOT NULL,
+                data_execucao TEXT NOT NULL,
+                status TEXT DEFAULT 'pendente',
+                criado_em TEXT DEFAULT (datetime('now', 'localtime'))
+            )
+        """)
+        db.conn.commit()
+    except Exception:
+        pass
+    cur = db.conn.execute(
+        "INSERT INTO captacao_agendamentos (captacao_id, data_execucao) VALUES (?, ?)",
+        (captacao_id, data_execucao)
+    )
+    db.conn.commit()
+    return {"status": "success", "id": cur.lastrowid, "data_execucao": data_execucao}
+
+
+@router.get("/{captacao_id}/agendamentos", summary="Listar agendamentos")
+def listar_agendamentos(captacao_id: int):
+    """Lista agendamentos de execução."""
+    db = get_db()
+    try:
+        rows = db.conn.execute(
+            "SELECT * FROM captacao_agendamentos WHERE captacao_id = ? ORDER BY data_execucao ASC",
+            (captacao_id,)
+        ).fetchall()
+        return {"status": "success", "total": len(rows), "agendamentos": [dict(r) for r in rows]}
+    except Exception:
+        return {"status": "success", "total": 0, "agendamentos": []}
+
+
+@router.put("/{captacao_id}/limite", summary="Configurar limite de resultados")
+def configurar_limite(
+    captacao_id: int,
+    max_resultados: int = Query(1000, ge=100, le=10000, description="Limite máximo de resultados"),
+    max_paginas: int = Query(10, ge=1, le=50, description="Máximo de páginas por execução"),
+):
+    """Configura limite de resultados por captação."""
+    db = get_db()
+    try:
+        db.conn.execute("ALTER TABLE captacoes ADD COLUMN max_resultados INTEGER DEFAULT 1000")
+        db.conn.execute("ALTER TABLE captacoes ADD COLUMN max_paginas INTEGER DEFAULT 10")
+        db.conn.commit()
+    except Exception:
+        pass
+    db.conn.execute(
+        "UPDATE captacoes SET max_resultados = ?, max_paginas = ? WHERE id = ?",
+        (max_resultados, max_paginas, captacao_id)
+    )
+    db.conn.commit()
+    return {"status": "success", "captacao_id": captacao_id, "max_resultados": max_resultados, "max_paginas": max_paginas}
+
+
 @router.get("/{captacao_id}/resumo-whatsapp", summary="Resumo para WhatsApp")
 def resumo_whatsapp(captacao_id: int):
     """Gera resumo formatado para envio via WhatsApp."""
