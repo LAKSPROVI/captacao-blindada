@@ -494,6 +494,10 @@ app.include_router(busca_global_router)
 from djen.api.routers.atividades import router as atividades_router
 app.include_router(atividades_router)
 
+# Sistema router
+from djen.api.routers.sistema import router as sistema_router
+app.include_router(sistema_router)
+
 # Notifications router
 app.include_router(notifications_router)
 
