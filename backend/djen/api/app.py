@@ -474,6 +474,14 @@ app.include_router(busca_unificada_router)
 from djen.api.routers.prazos import router as prazos_router
 app.include_router(prazos_router)
 
+# Favoritos e Tags router
+from djen.api.routers.favoritos import router as favoritos_router
+app.include_router(favoritos_router)
+
+# Agenda router
+from djen.api.routers.agenda import router as agenda_router
+app.include_router(agenda_router)
+
 # Notifications router
 app.include_router(notifications_router)
 
