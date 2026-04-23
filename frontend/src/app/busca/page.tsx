@@ -149,11 +149,37 @@ export default function PesquisasPage() {
         data_fim: dataFim || undefined,
       });
       setSearchResults(res);
-      await loadPesquisas(); // Atualiza histórico
+      await loadPesquisas();
     } catch (err) {
       alert("Erro ao realizar busca unificada");
     } finally {
       setSearching(false);
+    }
+  };
+
+  const handleSalvarComoCaptacao = async () => {
+    if (!termo.trim()) return;
+    const nome = prompt("Nome da captação:", `Captação: ${termo}`);
+    if (!nome) return;
+    try {
+      await api.criarCaptacao({
+        nome,
+        tipo_busca: "nome_parte",
+        nome_parte: termo,
+        tribunal: tribunal || undefined,
+        data_inicio: dataInicio || undefined,
+        data_fim: dataFim || undefined,
+        fontes: fontes.join(","),
+        intervalo_minutos: 120,
+        horario_inicio: "06:00",
+        horario_fim: "23:00",
+        dias_semana: "1,2,3,4,5",
+        prioridade: "normal",
+        modalidade: "recorrente",
+      });
+      alert("Captação criada com sucesso! Acesse a aba Captação para gerenciar.");
+    } catch (err) {
+      alert("Erro ao criar captação");
     }
   };
 
@@ -224,14 +250,24 @@ export default function PesquisasPage() {
                 />
               </div>
             </div>
-            <div className="flex items-end">
+            <div className="flex items-end gap-2">
               <button
                 type="submit"
                 disabled={searching}
-                className="w-full flex items-center justify-center gap-2 rounded-lg bg-legal-600 px-4 py-2 text-sm font-semibold text-white hover:bg-legal-700 disabled:opacity-50 transition-all font-inter"
+                className="flex-1 flex items-center justify-center gap-2 rounded-lg bg-legal-600 px-4 py-2 text-sm font-semibold text-white hover:bg-legal-700 disabled:opacity-50 transition-all font-inter"
               >
-                {searching ? <LoadingSpinner /> : <><Search className="h-4 w-4" /> Pesquisar Agora</>}
+                {searching ? <LoadingSpinner /> : <><Search className="h-4 w-4" /> Pesquisar</>}
               </button>
+              {termo.trim() && (
+                <button
+                  type="button"
+                  onClick={handleSalvarComoCaptacao}
+                  className="flex items-center gap-1 rounded-lg border border-legal-600 px-3 py-2 text-sm font-medium text-legal-600 hover:bg-legal-600/10 transition-all"
+                  title="Salvar como captação automática"
+                >
+                  <BookOpen className="h-4 w-4" /> Salvar
+                </button>
+              )}
             </div>
           </div>
 
