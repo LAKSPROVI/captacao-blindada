@@ -544,6 +544,10 @@ app.include_router(fontes_config_router)
 from djen.api.routers.kanban import router as kanban_router
 app.include_router(kanban_router)
 
+# Final Batch V2 router
+from djen.api.routers.final_batch import router as final_batch_router
+app.include_router(final_batch_router)
+
 
 # =========================================================================
 # Root

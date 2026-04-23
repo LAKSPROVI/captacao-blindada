@@ -21,10 +21,20 @@ def get_db() -> Database:
     return get_database()
 
 
-VERSION = "1.7.0"
+VERSION = "2.0.0"
 BUILD_DATE = "2026-04-23"
 
 CHANGELOG = [
+    {"version": "2.0.0", "date": "2026-04-23", "changes": [
+        "13 endpoints V2 avançados (comparação, heatmap, score, notas, templates)",
+        "Previsão de consumo de tokens com projeção mensal",
+        "Resumo executivo consolidado com 10 métricas",
+        "Exportação full backup JSON de todas as tabelas",
+        "Health-check completo com 6 verificações independentes",
+        "Sistema de notas/lembretes globais com CRUD",
+        "Templates pré-configurados de captação",
+        "200 implementações no total",
+    ]},
     {"version": "1.5.2", "date": "2026-04-23", "changes": [
         "6 endpoints ferramentas (formatar CNJ, dias úteis, vacuum, uptime)",
         "9 endpoints extras (batch insert, duplicadas, saúde completa)",
@@ -97,8 +107,8 @@ def versao():
         "name": "Captação Blindada",
         "description": "Sistema de Captação Jurídica Automatizada",
         "api_docs": "/docs",
-    "total_endpoints": 107,
-    "total_implementacoes": 160,
+    "total_endpoints": 120,
+    "total_implementacoes": 200,
     }
 
 

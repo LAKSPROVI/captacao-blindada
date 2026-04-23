@@ -1175,6 +1175,62 @@ class ApiClient {
     const { data } = await this.client.get("/automacoes/historico", { params: { limite } });
     return data;
   }
+
+  // V2 - Funcionalidades Avançadas
+  async compararCaptacoes(ids: string): Promise<any> {
+    const { data } = await this.client.get("/v2/captacoes/comparar", { params: { ids } });
+    return data;
+  }
+
+  async getPublicacoesPeriodo(data_inicio: string, data_fim: string, tribunal?: string): Promise<any> {
+    const { data } = await this.client.get("/v2/publicacoes/periodo", { params: { data_inicio, data_fim, tribunal } });
+    return data;
+  }
+
+  async getScoreProdutividade(): Promise<any> {
+    const { data } = await this.client.get("/v2/produtividade/score");
+    return data;
+  }
+
+  async getHeatmapAtividade(dias: number = 30): Promise<any> {
+    const { data } = await this.client.get("/v2/atividade/heatmap", { params: { dias } });
+    return data;
+  }
+
+  async getPrevisaoConsumo(): Promise<any> {
+    const { data } = await this.client.get("/v2/previsao/consumo");
+    return data;
+  }
+
+  async listarNotas(): Promise<any> {
+    const { data } = await this.client.get("/v2/notas");
+    return data;
+  }
+
+  async criarNota(titulo: string, conteudo: string = "", cor: string = "#3b82f6"): Promise<any> {
+    const { data } = await this.client.post("/v2/notas", { titulo, conteudo, cor });
+    return data;
+  }
+
+  async removerNota(id: number): Promise<any> {
+    const { data } = await this.client.delete(`/v2/notas/${id}`);
+    return data;
+  }
+
+  async getTemplatesCaptacao(): Promise<any> {
+    const { data } = await this.client.get("/v2/templates");
+    return data;
+  }
+
+  async getResumoExecutivo(): Promise<any> {
+    const { data } = await this.client.get("/v2/resumo-executivo");
+    return data;
+  }
+
+  async getHealthCheckCompleto(): Promise<any> {
+    const { data } = await this.client.get("/v2/health-check-completo");
+    return data;
+  }
 }
 
 // =========================================================================
