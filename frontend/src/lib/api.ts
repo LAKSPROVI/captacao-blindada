@@ -1023,6 +1023,37 @@ class ApiClient {
     const { data } = await this.client.put(`/admin/tenants/${id}/reativar`);
     return data;
   }
+
+  // Analytics extras
+  async getPublicacoesPorClasse(): Promise<any> {
+    const { data } = await this.client.get("/extras/publicacoes-por-classe");
+    return data;
+  }
+
+  async getPublicacoesPorOrgao(): Promise<any> {
+    const { data } = await this.client.get("/extras/publicacoes-por-orgao");
+    return data;
+  }
+
+  async getCaptacoesPorTipo(): Promise<any> {
+    const { data } = await this.client.get("/extras/captacoes-por-tipo");
+    return data;
+  }
+
+  async getErrosPorTipo(): Promise<any> {
+    const { data } = await this.client.get("/extras/erros-por-tipo");
+    return data;
+  }
+
+  async getSaudeCompleta(): Promise<any> {
+    const { data } = await this.client.get("/extras/saude-completa");
+    return data;
+  }
+
+  async limparDuplicadas(): Promise<any> {
+    const { data } = await this.client.post("/extras/limpar-publicacoes-duplicadas");
+    return data;
+  }
 }
 
 // =========================================================================

@@ -520,6 +520,10 @@ app.include_router(errors_router)
 from djen.api.routers.analytics import router as analytics_router
 app.include_router(analytics_router)
 
+# Extras router
+from djen.api.routers.extras import router as extras_router
+app.include_router(extras_router)
+
 
 # =========================================================================
 # Root
