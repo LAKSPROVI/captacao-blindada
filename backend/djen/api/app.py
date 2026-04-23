@@ -536,6 +536,10 @@ app.include_router(integracoes_router)
 from djen.api.routers.automacoes import router as automacoes_router
 app.include_router(automacoes_router)
 
+# Fontes Config router
+from djen.api.routers.fontes_config import router as fontes_config_router
+app.include_router(fontes_config_router)
+
 
 # =========================================================================
 # Root
