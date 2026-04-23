@@ -21,10 +21,25 @@ def get_db() -> Database:
     return get_database()
 
 
-VERSION = "1.4.1"
+VERSION = "1.5.0"
 BUILD_DATE = "2026-04-23"
 
 CHANGELOG = [
+    {"version": "1.5.0", "date": "2026-04-23", "changes": [
+        "Agendamento por data específica para captações",
+        "Limite configurável por captação (max_resultados, max_paginas)",
+        "Log de chamadas IA com estatísticas",
+        "Fallback entre modelos IA",
+        "Notificação email para erros críticos",
+        "Alerta de saldo baixo",
+        "Upload CSV de processos",
+        "Busca por nome de parte",
+        "Suspender/reativar tenant",
+        "Sidebar com memória localStorage",
+        "Comparação entre tribunais",
+        "Top processos mais ativos",
+        "95+ implementações no total",
+    ]},
     {"version": "1.4.1", "date": "2026-04-23", "changes": [
         "Busca global full-text em todo o sistema",
         "Atividades por usuário com log detalhado",
@@ -73,8 +88,8 @@ def versao():
         "name": "Captação Blindada",
         "description": "Sistema de Captação Jurídica Automatizada",
         "api_docs": "/docs",
-        "total_endpoints": 50,
-        "total_implementacoes": 76,
+    "total_endpoints": 60,
+    "total_implementacoes": 99,
     }
 
 
