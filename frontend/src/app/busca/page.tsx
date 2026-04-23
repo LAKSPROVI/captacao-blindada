@@ -169,7 +169,7 @@ export default function PesquisasPage() {
         tribunal: tribunal || undefined,
         data_inicio: dataInicio || undefined,
         data_fim: dataFim || undefined,
-        fontes: fontes.join(","),
+        fontes: fontes as any,
         intervalo_minutos: 120,
         horario_inicio: "06:00",
         horario_fim: "23:00",
