@@ -482,6 +482,10 @@ app.include_router(favoritos_router)
 from djen.api.routers.agenda import router as agenda_router
 app.include_router(agenda_router)
 
+# Contadores router
+from djen.api.routers.contadores import router as contadores_router
+app.include_router(contadores_router)
+
 # Notifications router
 app.include_router(notifications_router)
 
