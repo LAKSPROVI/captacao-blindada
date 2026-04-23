@@ -1,6 +1,6 @@
 import logging
 from typing import List
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Body
 from pydantic import BaseModel
 
 from djen.api.auth import get_current_user, require_role, UserInDB
@@ -38,6 +38,29 @@ def listar_erros(limit: int = 100, offset: int = 0, status: str = "aberto", curr
     
     rows = db.conn.execute(query, params).fetchall()
     return [SystemErrorResponse(**dict(r)) for r in rows]
+
+
+@router.post("/notify-critical", summary="Notificar erro crítico por email")
+def notify_critical(error_id: int = Body(...), current_user: UserInDB = Depends(require_role("master"))):
+    """Envia notificação por email sobre erro crítico."""
+    db = get_database()
+    error = db.conn.execute("SELECT * FROM system_errors WHERE id = ?", (error_id,)).fetchone()
+    if not error:
+        raise HTTPException(status_code=404, detail="Erro não encontrado")
+    e = dict(error)
+    try:
+        from djen.api.notifications import get_notification_manager
+        import os
+        manager = get_notification_manager()
+        email_to = os.environ.get("NOTIFICATION_EMAIL", "")
+        if manager.email.enabled and email_to:
+            subject = f"[CRITICO] {e.get('error_type', 'Erro')} em {e.get('function_name', 'N/A')}"
+            body = f"ERRO CRITICO\n\nTipo: {e.get('error_type')}\nFuncao: {e.get('function_name')}\nMsg: {e.get('error_message')}\nData: {e.get('criado_em')}\n\nStack:\n{(e.get('stack_trace') or '')[:1000]}"
+            success = manager.email.send(email_to, subject, body)
+            return {"status": "success" if success else "error", "message": "Email enviado" if success else "Falha"}
+        return {"status": "warning", "message": "Email nao configurado. Configure SMTP_HOST e NOTIFICATION_EMAIL no .env"}
+    except Exception as ex:
+        return {"status": "error", "message": str(ex)}
 
 
 @router.get("/recent", response_model=List[SystemErrorResponse])
