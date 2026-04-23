@@ -462,6 +462,10 @@ app.include_router(advanced_router)
 from djen.api.routers.relatorios import router as relatorios_router
 app.include_router(relatorios_router)
 
+# Dashboard router
+from djen.api.routers.dashboard import router as dashboard_router
+app.include_router(dashboard_router)
+
 # Notifications router
 app.include_router(notifications_router)
 
