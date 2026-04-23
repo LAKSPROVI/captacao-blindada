@@ -469,6 +469,64 @@ def obter_captacao(captacao_id: int):
     return dict(captacao)
 
 
+@router.get("/{captacao_id}/exportar/csv", summary="Exportar publicações da captação em CSV")
+def exportar_captacao_csv(captacao_id: int):
+    """Exporta todas as publicações vinculadas a esta captação em CSV."""
+    import csv, io
+    from fastapi.responses import StreamingResponse
+    db = get_db()
+    cap = db.obter_captacao(captacao_id)
+    if not cap:
+        raise HTTPException(status_code=404, detail="Captacao nao encontrada")
+    
+    rows = db.conn.execute(
+        "SELECT * FROM publicacoes WHERE captacao_id = ? ORDER BY id DESC", (captacao_id,)
+    ).fetchall()
+    
+    output = io.StringIO()
+    writer = csv.writer(output)
+    writer.writerow(["ID", "Fonte", "Tribunal", "Data", "Processo", "Classe", "Orgao", "OABs", "Advogados", "Partes", "Conteudo"])
+    for r in rows:
+        d = dict(r)
+        writer.writerow([
+            d.get("id"), d.get("fonte"), d.get("tribunal"), d.get("data_publicacao"),
+            d.get("numero_processo"), d.get("classe_processual"), d.get("orgao_julgador"),
+            d.get("oab_encontradas"), d.get("advogados"), d.get("partes"),
+            (d.get("conteudo") or "")[:500],
+        ])
+    
+    output.seek(0)
+    nome = dict(cap).get("nome", f"captacao_{captacao_id}")
+    return StreamingResponse(
+        iter([output.getvalue()]),
+        media_type="text/csv",
+        headers={"Content-Disposition": f"attachment; filename={nome.replace(' ','_')}.csv"}
+    )
+
+
+@router.get("/{captacao_id}/exportar/json", summary="Exportar publicações da captação em JSON")
+def exportar_captacao_json(captacao_id: int):
+    """Exporta todas as publicações vinculadas a esta captação em JSON."""
+    import json as _json
+    from fastapi.responses import StreamingResponse
+    db = get_db()
+    cap = db.obter_captacao(captacao_id)
+    if not cap:
+        raise HTTPException(status_code=404, detail="Captacao nao encontrada")
+    
+    rows = db.conn.execute(
+        "SELECT * FROM publicacoes WHERE captacao_id = ? ORDER BY id DESC", (captacao_id,)
+    ).fetchall()
+    
+    data = _json.dumps([dict(r) for r in rows], ensure_ascii=False, indent=2, default=str)
+    nome = dict(cap).get("nome", f"captacao_{captacao_id}")
+    return StreamingResponse(
+        iter([data]),
+        media_type="application/json",
+        headers={"Content-Disposition": f"attachment; filename={nome.replace(' ','_')}.json"}
+    )
+
+
 @router.put("/{captacao_id}", summary="Atualizar captacao")
 def atualizar_captacao(captacao_id: int, req: CaptacaoUpdateRequest):
     """Atualiza parametros de uma captacao existente."""
