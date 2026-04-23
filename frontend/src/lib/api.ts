@@ -1122,6 +1122,59 @@ class ApiClient {
     const { data } = await this.client.get("/tools/indices-db");
     return data;
   }
+
+  // Fontes de Dados
+  async getFontesDisponiveis(): Promise<any> {
+    const { data } = await this.client.get("/fontes/disponiveis");
+    return data;
+  }
+
+  async getFonteDetalhe(id: string): Promise<any> {
+    const { data } = await this.client.get(`/fontes/${id}`);
+    return data;
+  }
+
+  async getFontesAtivasStatus(): Promise<any> {
+    const { data } = await this.client.get("/fontes/ativas/status");
+    return data;
+  }
+
+  // Kanban
+  async getKanbanColunas(): Promise<any> {
+    const { data } = await this.client.get("/kanban/colunas");
+    return data;
+  }
+
+  async getKanbanCards(coluna?: string): Promise<any> {
+    const { data } = await this.client.get("/kanban/cards", { params: coluna ? { coluna } : {} });
+    return data;
+  }
+
+  async criarKanbanCard(params: { titulo: string; descricao?: string; numero_processo?: string; coluna?: string; prioridade?: string }): Promise<any> {
+    const { data } = await this.client.post("/kanban/cards", params);
+    return data;
+  }
+
+  async moverKanbanCard(id: number, coluna: string, ordem: number = 0): Promise<any> {
+    const { data } = await this.client.put(`/kanban/cards/${id}/mover`, { coluna, ordem });
+    return data;
+  }
+
+  async removerKanbanCard(id: number): Promise<any> {
+    const { data } = await this.client.delete(`/kanban/cards/${id}`);
+    return data;
+  }
+
+  async getKanbanStats(): Promise<any> {
+    const { data } = await this.client.get("/kanban/stats");
+    return data;
+  }
+
+  // Automações historico
+  async getHistoricoAutomacoes(limite: number = 50): Promise<any> {
+    const { data } = await this.client.get("/automacoes/historico", { params: { limite } });
+    return data;
+  }
 }
 
 // =========================================================================

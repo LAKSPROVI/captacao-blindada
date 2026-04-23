@@ -21,7 +21,7 @@ def get_db() -> Database:
     return get_database()
 
 
-VERSION = "1.6.0"
+VERSION = "1.7.0"
 BUILD_DATE = "2026-04-23"
 
 CHANGELOG = [
@@ -97,8 +97,8 @@ def versao():
         "name": "Captação Blindada",
         "description": "Sistema de Captação Jurídica Automatizada",
         "api_docs": "/docs",
-    "total_endpoints": 99,
-    "total_implementacoes": 150,
+    "total_endpoints": 107,
+    "total_implementacoes": 160,
     }
 
 

@@ -540,6 +540,10 @@ app.include_router(automacoes_router)
 from djen.api.routers.fontes_config import router as fontes_config_router
 app.include_router(fontes_config_router)
 
+# Kanban router
+from djen.api.routers.kanban import router as kanban_router
+app.include_router(kanban_router)
+
 
 # =========================================================================
 # Root
