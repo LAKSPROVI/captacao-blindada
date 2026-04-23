@@ -250,3 +250,116 @@ def parar_backup_auto():
     manager = get_backup_manager()
     manager.stop()
     return {"status": "success", "message": "Backup automático parado"}
+
+
+# =============================================================================
+# Configurações Globais
+# =============================================================================
+
+@router.get("/settings", summary="Listar configurações globais")
+def listar_settings():
+    """Lista todas as configurações globais do sistema."""
+    from djen.api.database import get_database
+    db = get_database()
+    try:
+        rows = db.conn.execute("SELECT * FROM system_settings").fetchall()
+        return {"status": "success", "settings": {r["key"]: r["value"] for r in rows}}
+    except Exception:
+        return {"status": "success", "settings": {}}
+
+
+@router.put("/settings/{key}", summary="Atualizar configuração")
+def atualizar_setting(key: str, value: str = Body(...)):
+    """Atualiza uma configuração global."""
+    from djen.api.database import get_database
+    db = get_database()
+    try:
+        db.conn.execute("CREATE TABLE IF NOT EXISTS system_settings (key TEXT PRIMARY KEY, value TEXT, updated_at TEXT DEFAULT (datetime('now','localtime')))")
+        db.conn.execute("INSERT OR REPLACE INTO system_settings (key, value, updated_at) VALUES (?, ?, datetime('now','localtime'))", (key, value))
+        db.conn.commit()
+        return {"status": "success", "key": key, "value": value}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# =============================================================================
+# Limpeza de Dados Antigos (Purge)
+# =============================================================================
+
+@router.post("/purge/execucoes", summary="Limpar execuções antigas")
+def purge_execucoes(dias: int = Body(90, description="Manter últimos X dias")):
+    """Remove execuções mais antigas que X dias."""
+    from djen.api.database import get_database
+    db = get_database()
+    cur = db.conn.execute(
+        "DELETE FROM execucoes_captacao WHERE date(inicio) < date('now','localtime', ? || ' days')",
+        (f"-{dias}",)
+    )
+    db.conn.commit()
+    return {"status": "success", "removidos": cur.rowcount, "dias_mantidos": dias}
+
+
+@router.post("/purge/erros", summary="Limpar erros resolvidos antigos")
+def purge_erros(dias: int = Body(30, description="Manter últimos X dias")):
+    """Remove erros resolvidos mais antigos que X dias."""
+    from djen.api.database import get_database
+    db = get_database()
+    cur = db.conn.execute(
+        "DELETE FROM system_errors WHERE status='resolvido' AND date(criado_em) < date('now','localtime', ? || ' days')",
+        (f"-{dias}",)
+    )
+    db.conn.commit()
+    return {"status": "success", "removidos": cur.rowcount, "dias_mantidos": dias}
+
+
+@router.post("/purge/audit", summary="Limpar logs de auditoria antigos")
+def purge_audit(dias: int = Body(180, description="Manter últimos X dias")):
+    """Remove logs de auditoria mais antigos que X dias."""
+    from djen.api.database import get_database
+    db = get_database()
+    cur = db.conn.execute(
+        "DELETE FROM audit_logs WHERE date(criado_em) < date('now','localtime', ? || ' days')",
+        (f"-{dias}",)
+    )
+    db.conn.commit()
+    return {"status": "success", "removidos": cur.rowcount, "dias_mantidos": dias}
+
+
+# =============================================================================
+# Importar/Exportar Captações
+# =============================================================================
+
+@router.get("/captacoes/exportar", summary="Exportar todas as captações em JSON")
+def exportar_captacoes():
+    """Exporta todas as captações configuradas em JSON."""
+    import json as _json
+    from fastapi.responses import StreamingResponse
+    from djen.api.database import get_database
+    db = get_database()
+    rows = db.conn.execute("SELECT * FROM captacoes ORDER BY id").fetchall()
+    data = _json.dumps([dict(r) for r in rows], ensure_ascii=False, indent=2, default=str)
+    return StreamingResponse(
+        iter([data]),
+        media_type="application/json",
+        headers={"Content-Disposition": "attachment; filename=captacoes_export.json"}
+    )
+
+
+@router.post("/captacoes/importar", summary="Importar captações de JSON")
+def importar_captacoes(captacoes: list = Body(...)):
+    """Importa captações a partir de lista JSON."""
+    from djen.api.database import get_database
+    db = get_database()
+    importados = 0
+    erros = []
+    for cap in captacoes:
+        try:
+            db.criar_captacao(
+                nome=cap.get("nome", "Importada"),
+                tipo_busca=cap.get("tipo_busca", "processo"),
+                **{k: v for k, v in cap.items() if k not in ("id", "nome", "tipo_busca", "criado_em", "atualizado_em")}
+            )
+            importados += 1
+        except Exception as e:
+            erros.append({"nome": cap.get("nome"), "erro": str(e)})
+    return {"status": "success", "importados": importados, "erros": erros}
