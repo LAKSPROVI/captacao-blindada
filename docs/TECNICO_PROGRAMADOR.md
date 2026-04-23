@@ -1,6 +1,6 @@
 # Documento Tecnico — Captacao Peticao Blindada
 
-> Versao: 1.2.0 | Atualizado: 2026-04-18 | Para: Desenvolvedores e DevOps
+> Versao: 2.0.0 | Atualizado: 2026-04-23 | Para: Desenvolvedores e DevOps | 200 implementações | 120 endpoints
 
 ---
 
@@ -656,3 +656,111 @@ cd frontend && npm run lint  # TypeScript/ESLint
 | Login falha com admin/admin | .env producao tem senha diferente | Usar credenciais do .env (ADMIN_PASSWORD) |
 | Build frontend falha | Erros TypeScript | Verificar types no api.ts vs componentes |
 | DJEN health "unhealthy" | Proxy nao configurado | Verificar BRIGHT_DATA_* no .env |
+
+---
+
+## Complemento Técnico v2.0.0
+
+### Novos Módulos Backend
+
+| Módulo | Arquivo | Descrição |
+|--------|---------|-----------|
+| ratelimit | api/ratelimit.py | Rate Limiting com slowapi |
+| circuitbreaker | api/circuitbreaker.py | Circuit Breaker para fontes externas |
+| validation | api/validation.py | Validação CNJ, OAB, 62 tribunais |
+| webhook | api/webhook.py | Sistema de webhooks |
+| metrics | api/metrics.py | Métricas e monitoramento |
+| cache | api/cache.py | Cache com Redis opcional |
+| backup | api/backup.py | Backup automático |
+| security | api/security.py | API Keys, 2FA, SSO |
+| notifications | api/notifications.py | Email SMTP + WhatsApp |
+| advanced_logging | api/advanced_logging.py | Logging estruturado |
+
+### Novos Routers Backend (23 adicionados)
+
+```
+backend/djen/api/routers/
+├── validation.py          # CNJ, OAB, Tribunais
+├── webhooks.py            # Webhooks CRUD
+├── metrics.py             # Métricas JSON/Prometheus
+├── advanced.py            # Keys, 2FA, SSO, Cache, Backup
+├── notifications.py       # Email, WhatsApp
+├── dashboard.py           # Evolução, tribunais, fontes
+├── relatorios.py          # Semanal, diário, CSV
+├── busca_unificada.py     # Busca simultânea
+├── prazos.py              # Prazos processuais
+├── favoritos.py           # Favoritos e tags
+├── agenda.py              # Compromissos
+├── contadores.py          # Contadores sidebar
+├── busca_global.py        # Busca full-text
+├── atividades.py          # Atividades, email HTML
+├── sistema.py             # Versão, changelog
+├── analytics.py           # Analytics avançados
+├── extras.py              # Batch insert, duplicatas
+├── tools.py               # Formatar CNJ, vacuum
+├── integracoes.py         # Telegram, webhook receiver
+├── automacoes.py          # Regras de automação
+├── fontes_config.py       # 10 fontes de dados
+├── kanban.py              # Kanban board
+└── final_batch.py         # V2 endpoints finais
+```
+
+### Middlewares Ativos
+
+| Middleware | Descrição |
+|-----------|-----------|
+| GZipMiddleware | Compressão gzip (min 500 bytes) |
+| SecurityHeadersMiddleware | X-Frame, XSS, CSP, Referrer, Permissions |
+| MetricsMiddleware | Coleta métricas + auditoria automática |
+| CORSMiddleware | CORS restrito configurável |
+| Rate Limiter | slowapi com limites por endpoint |
+
+### Variáveis de Ambiente (Produção)
+
+```bash
+IS_PRODUCTION=true
+JWT_SECRET_KEY=<chave-segura-64-chars>
+ADMIN_PASSWORD=<senha-forte>
+CAPTACAO_PORT=8001
+FRONTEND_PORT=8010
+ALLOWED_ORIGINS=https://captacao.jurislaw.com.br
+TZ=America/Sao_Paulo
+
+# Opcionais
+GEMINI_API_KEY=<chave-gemini>
+SMTP_HOST=smtp.gmail.com
+SMTP_PORT=587
+SMTP_USER=<email>
+SMTP_PASSWORD=<app-password>
+NOTIFICATION_EMAIL=<destino>
+WHATSAPP_TOKEN=<token>
+WHATSAPP_PHONE_ID=<phone-id>
+TELEGRAM_BOT_TOKEN=<token>
+TELEGRAM_CHAT_ID=<chat-id>
+```
+
+### Performance SQLite
+
+```sql
+PRAGMA journal_mode=WAL
+PRAGMA cache_size=-20000
+PRAGMA synchronous=NORMAL
+PRAGMA temp_store=MEMORY
+PRAGMA mmap_size=268435456
+PRAGMA foreign_keys=ON
+```
+
+### Docker
+
+```yaml
+# Healthcheck otimizado
+healthcheck:
+  test: ["CMD", "curl", "-f", "http://localhost:8000/api/metrics/health"]
+  interval: 60s
+  timeout: 15s
+  start_period: 120s
+  retries: 5
+
+# Timezone
+ENV TZ=America/Sao_Paulo
+```

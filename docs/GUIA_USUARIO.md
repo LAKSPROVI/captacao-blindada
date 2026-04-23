@@ -1,6 +1,6 @@
 # Guia do Usuario — Captacao Peticao Blindada
 
-> Versao: 1.1.0 | Atualizado: 2026-04-14 | Para: Usuarios finais (advogados, equipe juridica)
+> Versao: 2.0.0 | Atualizado: 2026-04-23 | Para: Usuarios finais (advogados, equipe juridica) | 200 implementações
 
 ---
 
@@ -411,3 +411,103 @@ Para relatar problemas ou solicitar novas funcionalidades, entre em contato com 
 ---
 
 *Documento gerado em 2026-04-14 — Captacao Peticao Blindada v1.1.0*
+
+---
+
+## Novas Funcionalidades (v2.0.0)
+
+### Funcionalidades Adicionadas desde v1.1.0
+
+#### Captação Automatizada
+- Clonar captação existente com 1 clique
+- Salvar busca pontual como captação automática
+- Retry automático com backoff exponencial
+- Alertas quando captação não encontra resultados
+- Comparação entre execuções (diff)
+- Agendamento por data específica
+- Limite configurável por captação
+- Exportar publicações por captação (CSV/JSON)
+- Estatísticas avançadas por captação
+- Resumo formatado para WhatsApp
+
+#### Monitor DJEN
+- Marcar publicação como lida/não lida
+- Favoritar publicações importantes
+- Exportar publicações em CSV e JSON
+- Botões de exportação no painel
+
+#### Processos
+- Adicionar processo manualmente por número CNJ
+- Anotações e comentários em processos
+- Calculadora de prazos processuais (dias úteis)
+- Busca por nome de parte
+- Kanban board para gestão visual de processos
+
+#### Pesquisa Pontual
+- Busca simultânea em DataJud + DJEN
+- Histórico de buscas realizadas
+- Salvar busca como captação com 1 clique
+
+#### IA & Modelos
+- 3 modelos Gemini configurados (Flash, Flash Preview, Flash Lite)
+- 4 funções de IA (Classificação, Previsão, Resumo, Jurisprudência)
+- Log de chamadas à IA com estatísticas
+- Fallback automático entre modelos
+
+#### Administração
+- Gestão de usuários com Modal (criar/editar/deletar)
+- Página de Cadastros/Tenants
+- Bloquear/desbloquear usuários
+- Suspender/reativar tenants
+- Tarifação reformulada com 20 funções do sistema
+
+#### Segurança
+- Rate Limiting (proteção contra abuso)
+- Circuit Breaker (proteção contra falhas)
+- Security Headers (5 headers de segurança)
+- Bloqueio de login após 5 tentativas
+- CORS restrito em produção
+
+#### Cadeia de Custódia
+- Auditoria automática de todas as ações
+- Exportação em CSV e JSON
+- Estatísticas por ação, entidade e usuário
+- Verificação de integridade hash-chain
+
+#### Novas Ferramentas
+- Prazos processuais com cálculo de dias úteis
+- Agenda de compromissos e audiências
+- Favoritos e tags para organização
+- Notas/lembretes globais
+- Templates de captação
+- Busca global full-text
+- Contadores em tempo real
+- Relatórios semanal e diário
+- Score de produtividade
+- Mapa de calor de atividade
+
+#### Integrações
+- Notificações por Email (SMTP)
+- Notificações por WhatsApp Business
+- Telegram Bot (configurável)
+- Webhook receiver (Zapier/n8n/Make)
+- Google Calendar (placeholder)
+
+#### UX
+- Toast notifications (substituiu alert())
+- Skeleton loading
+- Modal component
+- Breadcrumbs em todas as páginas
+- Página 404 customizada
+- Modo escuro melhorado
+- Atalhos de teclado (Ctrl+K, Ctrl+1-3)
+- Tooltips informativos
+- Indicador offline
+- Sidebar com memória
+
+#### Performance
+- SQLite otimizado (WAL, cache, mmap)
+- Gzip compression
+- Cache em memória (5min TTL)
+- Paginação automática
+- Índices adicionais no banco

@@ -1,6 +1,6 @@
 # Mapeamento do Sistema — Captacao Peticao Blindada
 
-> Versao: 1.1.0 | Atualizado: 2026-04-14 | Para: Equipe tecnica e gestao
+> Versao: 2.0.0 | Atualizado: 2026-04-23 | Para: Equipe tecnica e gestao | 200 implementações | 120 endpoints
 
 ---
 
@@ -834,3 +834,90 @@ captacao-blindada/
 ---
 
 *Documento gerado em 2026-04-14 — Captacao Peticao Blindada v1.1.0*
+
+---
+
+## Mapeamento v2.0.0 - Novos Routers e Endpoints
+
+### Routers Adicionados (v1.2.1 → v2.0.0)
+
+| Router | Prefixo | Endpoints | Descrição |
+|--------|---------|-----------|-----------|
+| validation | /api/validation | 5 | Validação CNJ, OAB, Tribunais |
+| webhooks | /api/webhooks | 5 | Webhooks CRUD e trigger |
+| metrics | /api/metrics | 4 | Métricas JSON e Prometheus |
+| advanced | /api/config | 15 | API Keys, 2FA, SSO, Cache, Backup, Settings, Purge |
+| notifications | /api/notifications | 3 | Email e WhatsApp |
+| dashboard | /api/dashboard | 6 | Evolução, tribunais, fontes, próximas, atividade |
+| relatorios | /api/relatorios | 3 | Semanal, diário, CSV |
+| busca_unificada | /api/busca | 2 | Busca simultânea e status fontes |
+| prazos | /api/prazos | 5 | Prazos processuais CRUD |
+| favoritos | /api/favoritos | 7 | Favoritos e tags |
+| agenda | /api/agenda | 5 | Compromissos e audiências |
+| contadores | /api/contadores | 1 | Contadores em tempo real |
+| busca_global | /api/busca-global | 1 | Busca full-text global |
+| atividades | /api/atividades | 3 | Atividades, email HTML, duplicatas |
+| sistema | /api/sistema | 4 | Versão, changelog, exportar, tabelas |
+| analytics | /api/analytics | 7 | Publicações/dia, tribunais, horas pico |
+| extras | /api/extras | 9 | Batch insert, duplicadas, saúde completa |
+| tools | /api/tools | 6 | Formatar CNJ, dias úteis, vacuum |
+| integracoes | /api/integracoes | 6 | Telegram, webhook receiver, status |
+| automacoes | /api/automacoes | 6 | Regras de automação CRUD |
+| fontes_config | /api/fontes | 3 | Configuração de 10 fontes de dados |
+| kanban | /api/kanban | 8 | Kanban board CRUD |
+| final_batch | /api/v2 | 13 | Comparação, score, heatmap, notas, templates |
+
+### Tabelas do Banco (27 total)
+
+| Tabela | Descrição |
+|--------|-----------|
+| captacoes | Captações automatizadas |
+| execucoes_captacao | Histórico de execuções |
+| publicacoes | Publicações encontradas |
+| users | Usuários do sistema |
+| tenants | Escritórios/empresas |
+| audit_logs | Cadeia de custódia |
+| system_errors | Erros do sistema |
+| ai_config | Configuração de IA |
+| buscas | Histórico de buscas |
+| monitorados | Itens monitorados |
+| processos_monitorados | Processos monitorados |
+| health_checks | Verificações de saúde |
+| function_costs | Custos por função |
+| usage_logs | Logs de uso/tarifação |
+| resultados_analise | Resultados de análise IA |
+| processo_anotacoes | Anotações em processos |
+| prazos | Prazos processuais |
+| agenda | Compromissos/audiências |
+| favoritos | Favoritos |
+| tags | Tags/etiquetas |
+| tag_associacoes | Associações de tags |
+| kanban_cards | Cards do Kanban |
+| automacao_regras | Regras de automação |
+| automacao_historico | Histórico de automações |
+| notas_globais | Notas/lembretes |
+| webhook_received | Webhooks recebidos |
+| ia_logs | Log de chamadas IA |
+
+### Componentes Frontend (15 páginas + 10 componentes)
+
+| Componente | Arquivo | Descrição |
+|-----------|---------|-----------|
+| Toast | components/Toast.tsx | Notificações visuais |
+| Skeleton | components/Skeleton.tsx | Loading states |
+| Modal | components/Modal.tsx | Modais e confirmações |
+| Breadcrumbs | components/Breadcrumbs.tsx | Navegação hierárquica |
+| EmptyState | components/EmptyState.tsx | Estados vazios |
+| CompactTable | components/CompactTable.tsx | Tabelas compactas |
+| Tooltip | components/Tooltip.tsx | Tooltips informativos |
+| OnlineIndicator | components/OnlineIndicator.tsx | Indicador offline |
+| KeyboardShortcutsHelp | components/KeyboardShortcutsHelp.tsx | Atalhos de teclado |
+
+### Hooks Customizados
+
+| Hook | Arquivo | Descrição |
+|------|---------|-----------|
+| useDebounce | hooks/useDebounce.ts | Debounce para campos de busca |
+| useLocalStorage | hooks/useLocalStorage.ts | Estado persistido em localStorage |
+| useOnlineStatus | hooks/useOnlineStatus.ts | Status de conexão |
+| useKeyboardShortcuts | hooks/useKeyboardShortcuts.ts | Atalhos de teclado |
