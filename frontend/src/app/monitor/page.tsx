@@ -1173,6 +1173,30 @@ export default function MonitorPage() {
                 Marcar todas vistas
               </button>
             )}
+            {showPublicacoes && (
+              <a
+                href={`${process.env.NEXT_PUBLIC_API_URL || ''}/api/monitor/publicacoes/export/csv?limite=5000`}
+                target="_blank"
+                rel="noopener noreferrer"
+                onClick={(e) => e.stopPropagation()}
+                className="p-1.5 rounded-lg border text-green-600 hover:bg-green-50 dark:hover:bg-green-900/20 transition-colors text-xs px-2 flex items-center gap-1"
+                title="Exportar CSV"
+              >
+                CSV
+              </a>
+            )}
+            {showPublicacoes && (
+              <a
+                href={`${process.env.NEXT_PUBLIC_API_URL || ''}/api/monitor/publicacoes/export/json?limite=5000`}
+                target="_blank"
+                rel="noopener noreferrer"
+                onClick={(e) => e.stopPropagation()}
+                className="p-1.5 rounded-lg border text-blue-600 hover:bg-blue-50 dark:hover:bg-blue-900/20 transition-colors text-xs px-2 flex items-center gap-1"
+                title="Exportar JSON"
+              >
+                JSON
+              </a>
+            )}
             {showPublicacoes ? (
               <ChevronUp className="h-5 w-5 text-[var(--muted-foreground)]" />
             ) : (
