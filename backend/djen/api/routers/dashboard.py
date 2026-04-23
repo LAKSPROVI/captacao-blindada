@@ -56,22 +56,30 @@ def status_fontes():
     """Retorna status de todas as fontes de dados."""
     db = get_db()
     
-    fontes_stats = db.conn.execute("""
-        SELECT fonte, COUNT(*) as total,
-               MAX(data_publicacao) as ultima
-        FROM publicacoes
-        WHERE fonte IS NOT NULL
-        GROUP BY fonte
-    """).fetchall()
+    fontes_stats = []
+    try:
+        fontes_stats = db.conn.execute("""
+            SELECT fonte, COUNT(*) as total,
+                   MAX(data_publicacao) as ultima
+            FROM publicacoes
+            WHERE fonte IS NOT NULL
+            GROUP BY fonte
+        """).fetchall()
+    except Exception:
+        pass
     
-    buscas_stats = db.conn.execute("""
-        SELECT fonte, COUNT(*) as total_buscas,
-               SUM(CASE WHEN status = 'ok' THEN 1 ELSE 0 END) as sucesso,
-               SUM(CASE WHEN status != 'ok' THEN 1 ELSE 0 END) as falhas,
-               AVG(tempo_ms) as tempo_medio_ms
-        FROM buscas
-        GROUP BY fonte
-    """).fetchall()
+    buscas_stats = []
+    try:
+        buscas_stats = db.conn.execute("""
+            SELECT fonte, COUNT(*) as total_buscas,
+                   SUM(CASE WHEN status = 'ok' THEN 1 ELSE 0 END) as sucesso,
+                   SUM(CASE WHEN status != 'ok' THEN 1 ELSE 0 END) as falhas,
+                   AVG(tempo_ms) as tempo_medio_ms
+            FROM buscas
+            GROUP BY fonte
+        """).fetchall()
+    except Exception:
+        pass
     
     return {
         "status": "success",
@@ -132,7 +140,11 @@ def resumo_completo():
     pub_hoje = db.conn.execute("SELECT COUNT(*) as c FROM publicacoes WHERE date(data_publicacao) = date('now', 'localtime')").fetchone()["c"]
     exec_hoje = db.conn.execute("SELECT COUNT(*) as c FROM execucoes_captacao WHERE date(inicio) = date('now', 'localtime')").fetchone()["c"]
     novos_hoje = db.conn.execute("SELECT COALESCE(SUM(novos_resultados), 0) as t FROM execucoes_captacao WHERE date(inicio) = date('now', 'localtime')").fetchone()["t"]
-    processos = db.conn.execute("SELECT COUNT(*) as c FROM processos_monitorados WHERE ativo = 1").fetchone()["c"]
+    processos = 0
+    try:
+        processos = db.conn.execute("SELECT COUNT(*) as c FROM processos_monitorados WHERE ativo = 1").fetchone()["c"]
+    except Exception:
+        pass
     erros_hoje = db.conn.execute("SELECT COUNT(*) as c FROM system_errors WHERE date(criado_em) = date('now', 'localtime')").fetchone()["c"]
     
     return {
