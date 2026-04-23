@@ -127,7 +127,104 @@ def deletar_usuario(user_id: int, current_user: UserInDB = Depends(require_maste
     
     if current_user.role != "master" and target_user["tenant_id"] != current_user.tenant_id:
         raise HTTPException(status_code=403, detail="Sem acesso")
-        
+    
     db.conn.execute("DELETE FROM users WHERE id = ?", (user_id,))
     db.conn.commit()
+
+
+# =========================================================================
+# Bloqueio/Desbloqueio de Usuário
+# =========================================================================
+
+@router.put("/users/{user_id}/bloquear")
+def bloquear_usuario(user_id: int, current_user: UserInDB = Depends(require_master_or_tenant_admin())):
+    """Bloqueia um usuário sem deletar."""
+    db = get_database()
+    try:
+        db.conn.execute("ALTER TABLE users ADD COLUMN bloqueado INTEGER DEFAULT 0")
+        db.conn.commit()
+    except Exception:
+        pass
+    db.conn.execute("UPDATE users SET bloqueado = 1 WHERE id = ?", (user_id,))
+    db.conn.commit()
+    return {"status": "success", "message": f"Usuário {user_id} bloqueado"}
+
+
+@router.put("/users/{user_id}/desbloquear")
+def desbloquear_usuario(user_id: int, current_user: UserInDB = Depends(require_master_or_tenant_admin())):
+    """Desbloqueia um usuário."""
+    db = get_database()
+    db.conn.execute("UPDATE users SET bloqueado = 0 WHERE id = ?", (user_id,))
+    db.conn.commit()
+    return {"status": "success", "message": f"Usuário {user_id} desbloqueado"}
+
+
+# =========================================================================
+# Último Acesso
+# =========================================================================
+
+@router.get("/users/{user_id}/atividade")
+def atividade_usuario(user_id: int, current_user: UserInDB = Depends(require_master_or_tenant_admin())):
+    """Retorna atividade recente de um usuário."""
+    db = get_database()
+    user = db.conn.execute("SELECT id, username, full_name, role, criado_em FROM users WHERE id = ?", (user_id,)).fetchone()
+    if not user:
+        raise HTTPException(status_code=404, detail="Usuário não encontrado")
+    
+    ultimo_login = db.conn.execute(
+        "SELECT criado_em FROM audit_logs WHERE user_id = ? AND action = 'LOG_IN' ORDER BY id DESC LIMIT 1",
+        (user_id,)
+    ).fetchone()
+    
+    total_acoes = db.conn.execute(
+        "SELECT COUNT(*) as c FROM audit_logs WHERE user_id = ?", (user_id,)
+    ).fetchone()["c"]
+    
+    ultimas = db.conn.execute(
+        "SELECT action, entity_type, criado_em FROM audit_logs WHERE user_id = ? ORDER BY id DESC LIMIT 10",
+        (user_id,)
+    ).fetchall()
+    
+    return {
+        "status": "success",
+        "usuario": dict(user),
+        "ultimo_login": dict(ultimo_login)["criado_em"] if ultimo_login else None,
+        "total_acoes": total_acoes,
+        "ultimas_acoes": [dict(r) for r in ultimas],
+    }
+
+
+# =========================================================================
+# Estatísticas por Tenant
+# =========================================================================
+
+@router.get("/tenants/{tenant_id}/stats")
+def stats_tenant(tenant_id: int, current_user: UserInDB = Depends(require_role("master"))):
+    """Estatísticas de uso por tenant."""
+    db = get_database()
+    
+    usuarios = db.conn.execute("SELECT COUNT(*) as c FROM users WHERE tenant_id = ?", (tenant_id,)).fetchone()["c"]
+    
+    tenant = db.conn.execute("SELECT * FROM tenants WHERE id = ?", (tenant_id,)).fetchone()
+    if not tenant:
+        raise HTTPException(status_code=404, detail="Tenant não encontrado")
+    
+    captacoes = db.conn.execute("SELECT COUNT(*) as c FROM captacoes WHERE tenant_id = ?", (tenant_id,)).fetchone()["c"]
+    
+    execucoes = db.conn.execute("""
+        SELECT COUNT(*) as c FROM execucoes_captacao e
+        JOIN captacoes c ON e.captacao_id = c.id
+        WHERE c.tenant_id = ?
+    """, (tenant_id,)).fetchone()["c"]
+    
+    acoes = db.conn.execute("SELECT COUNT(*) as c FROM audit_logs WHERE tenant_id = ?", (tenant_id,)).fetchone()["c"]
+    
+    return {
+        "status": "success",
+        "tenant": dict(tenant),
+        "usuarios": usuarios,
+        "captacoes": captacoes,
+        "execucoes": execucoes,
+        "acoes_auditoria": acoes,
+    }
     return None
