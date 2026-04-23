@@ -527,6 +527,63 @@ def exportar_captacao_json(captacao_id: int):
     )
 
 
+@router.get("/{captacao_id}/estatisticas", summary="Estatísticas avançadas da captação")
+def estatisticas_captacao(captacao_id: int):
+    """Retorna estatísticas detalhadas de uma captação."""
+    db = get_db()
+    cap = db.obter_captacao(captacao_id)
+    if not cap:
+        raise HTTPException(status_code=404, detail="Captacao nao encontrada")
+    
+    total_exec = db.conn.execute(
+        "SELECT COUNT(*) as c FROM execucoes_captacao WHERE captacao_id=?", (captacao_id,)
+    ).fetchone()["c"]
+    
+    exec_ok = db.conn.execute(
+        "SELECT COUNT(*) as c FROM execucoes_captacao WHERE captacao_id=? AND status='completed'", (captacao_id,)
+    ).fetchone()["c"]
+    
+    exec_erro = db.conn.execute(
+        "SELECT COUNT(*) as c FROM execucoes_captacao WHERE captacao_id=? AND status!='completed'", (captacao_id,)
+    ).fetchone()["c"]
+    
+    total_pub = db.conn.execute(
+        "SELECT COUNT(*) as c FROM publicacoes WHERE captacao_id=?", (captacao_id,)
+    ).fetchone()["c"]
+    
+    total_novos = db.conn.execute(
+        "SELECT COALESCE(SUM(novos_resultados),0) as t FROM execucoes_captacao WHERE captacao_id=?", (captacao_id,)
+    ).fetchone()["t"]
+    
+    tempo_medio = db.conn.execute(
+        "SELECT COALESCE(AVG(duracao_ms),0) as t FROM execucoes_captacao WHERE captacao_id=? AND duracao_ms IS NOT NULL", (captacao_id,)
+    ).fetchone()["t"]
+    
+    por_tribunal = db.conn.execute(
+        "SELECT tribunal, COUNT(*) as c FROM publicacoes WHERE captacao_id=? AND tribunal IS NOT NULL GROUP BY tribunal ORDER BY c DESC LIMIT 10", (captacao_id,)
+    ).fetchall()
+    
+    evolucao = db.conn.execute(
+        """SELECT date(inicio) as dia, COUNT(*) as exec, COALESCE(SUM(novos_resultados),0) as novos
+           FROM execucoes_captacao WHERE captacao_id=? GROUP BY date(inicio) ORDER BY dia DESC LIMIT 30""", (captacao_id,)
+    ).fetchall()
+    
+    return {
+        "status": "success",
+        "captacao_id": captacao_id,
+        "nome": dict(cap).get("nome"),
+        "total_execucoes": total_exec,
+        "execucoes_ok": exec_ok,
+        "execucoes_erro": exec_erro,
+        "taxa_sucesso": round(exec_ok / total_exec * 100, 1) if total_exec > 0 else 0,
+        "total_publicacoes": total_pub,
+        "total_novos": total_novos,
+        "tempo_medio_ms": round(tempo_medio),
+        "por_tribunal": [dict(r) for r in por_tribunal],
+        "evolucao": [dict(r) for r in evolucao],
+    }
+
+
 @router.put("/{captacao_id}", summary="Atualizar captacao")
 def atualizar_captacao(captacao_id: int, req: CaptacaoUpdateRequest):
     """Atualiza parametros de uma captacao existente."""
