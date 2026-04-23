@@ -527,6 +527,57 @@ def exportar_captacao_json(captacao_id: int):
     )
 
 
+@router.get("/{captacao_id}/historico-alteracoes", summary="Histórico de alterações da captação")
+def historico_alteracoes(captacao_id: int, limite: int = Query(50, ge=1, le=200)):
+    """Lista alterações feitas na captação via auditoria."""
+    db = get_db()
+    rows = db.conn.execute("""
+        SELECT * FROM audit_logs 
+        WHERE entity_type LIKE '%captacao%' AND (entity_id = ? OR details LIKE ?)
+        ORDER BY id DESC LIMIT ?
+    """, (str(captacao_id), f'%"captacao_id": {captacao_id}%', limite)).fetchall()
+    return {"status": "success", "captacao_id": captacao_id, "total": len(rows), "alteracoes": [dict(r) for r in rows]}
+
+
+@router.get("/{captacao_id}/resumo-whatsapp", summary="Resumo para WhatsApp")
+def resumo_whatsapp(captacao_id: int):
+    """Gera resumo formatado para envio via WhatsApp."""
+    db = get_db()
+    cap = db.obter_captacao(captacao_id)
+    if not cap:
+        raise HTTPException(status_code=404, detail="Captacao nao encontrada")
+    cap = dict(cap)
+    
+    ultima = db.conn.execute(
+        "SELECT * FROM execucoes_captacao WHERE captacao_id = ? ORDER BY id DESC LIMIT 1",
+        (captacao_id,)
+    ).fetchone()
+    
+    pub_count = db.conn.execute(
+        "SELECT COUNT(*) as c FROM publicacoes WHERE captacao_id = ?", (captacao_id,)
+    ).fetchone()["c"]
+    
+    msg = f"""*Captação Blindada*
+📋 *{cap['nome']}*
+Tipo: {cap.get('tipo_busca', 'N/A')}
+Status: {'✅ Ativa' if cap.get('ativo') else '⏸ Pausada'}
+Publicações: {pub_count}
+Execuções: {cap.get('total_execucoes', 0)}
+Novos: {cap.get('total_novos', 0)}"""
+    
+    if ultima:
+        u = dict(ultima)
+        msg += f"""
+
+📊 *Última Execução*
+Data: {u.get('inicio', 'N/A')}
+Status: {u.get('status', 'N/A')}
+Resultados: {u.get('total_resultados', 0)}
+Novos: {u.get('novos_resultados', 0)}"""
+    
+    return {"status": "success", "mensagem": msg}
+
+
 @router.get("/{captacao_id}/estatisticas", summary="Estatísticas avançadas da captação")
 def estatisticas_captacao(captacao_id: int):
     """Retorna estatísticas detalhadas de uma captação."""
