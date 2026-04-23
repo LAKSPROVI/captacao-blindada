@@ -616,6 +616,57 @@ class ApiClient {
     return data;
   }
 
+  // Novos endpoints v1.3.0
+  async adicionarProcessoManual(params: { numero_processo: string; tribunal?: string }): Promise<any> {
+    const { data } = await this.client.post("/processos/adicionar", params);
+    return data;
+  }
+
+  async calcularPrazo(params: { data_inicio: string; dias_uteis: number }): Promise<any> {
+    const { data } = await this.client.post("/processos/prazos/calcular", params);
+    return data;
+  }
+
+  async getAnotacoes(numero_processo: string): Promise<any> {
+    const { data } = await this.client.get(`/processos/${encodeURIComponent(numero_processo)}/anotacoes`);
+    return data;
+  }
+
+  async addAnotacao(numero_processo: string, params: { texto: string; tipo: string }): Promise<any> {
+    const { data } = await this.client.post(`/processos/${encodeURIComponent(numero_processo)}/anotacoes`, params);
+    return data;
+  }
+
+  async deleteAnotacao(numero_processo: string, id: number): Promise<any> {
+    const { data } = await this.client.delete(`/processos/${encodeURIComponent(numero_processo)}/anotacoes/${id}`);
+    return data;
+  }
+
+  async clonarCaptacao(id: number): Promise<any> {
+    const { data } = await this.client.post(`/captacao/${id}/clonar`);
+    return data;
+  }
+
+  async marcarPublicacaoLida(id: number, lida: boolean = true): Promise<any> {
+    const { data } = await this.client.put(`/monitor/publicacoes/${id}/lida`, lida);
+    return data;
+  }
+
+  async marcarPublicacaoFavorita(id: number, favorita: boolean = true): Promise<any> {
+    const { data } = await this.client.put(`/monitor/publicacoes/${id}/favorita`, favorita);
+    return data;
+  }
+
+  async getHistoricoBuscas(limite: number = 50): Promise<any> {
+    const { data } = await this.client.get("/processos/buscas/historico", { params: { limite } });
+    return data;
+  }
+
+  async getNotificationStatus(): Promise<any> {
+    const { data } = await this.client.get("/notifications/status");
+    return data;
+  }
+
   async verificarProcessosAgora(): Promise<{ status: string; verificados?: number; atualizados?: number }> {
     const { data } = await this.client.post<{ status: string; verificados?: number; atualizados?: number }>("/processos/verificar-agora");
     return data;
