@@ -158,3 +158,37 @@ def resumo_completo():
         "processos_monitorados": processos,
         "erros_hoje": erros_hoje,
     }
+
+
+@router.get("/comparacao-tribunais", summary="Comparação entre tribunais")
+def comparacao_tribunais():
+    """Compara volume de publicações entre tribunais com dados semanal e mensal."""
+    db = get_db()
+    rows = db.conn.execute("""
+        SELECT tribunal, COUNT(*) as total,
+               COUNT(CASE WHEN date(data_publicacao) >= date('now','localtime','-7 days') THEN 1 END) as semana,
+               COUNT(CASE WHEN date(data_publicacao) >= date('now','localtime','-30 days') THEN 1 END) as mes
+        FROM publicacoes
+        WHERE tribunal IS NOT NULL AND tribunal != ''
+        GROUP BY tribunal
+        ORDER BY total DESC
+        LIMIT 20
+    """).fetchall()
+    return {"status": "success", "total_tribunais": len(rows), "tribunais": [dict(r) for r in rows]}
+
+
+@router.get("/top-processos", summary="Processos mais ativos")
+def top_processos(limite: int = Query(20, ge=1, le=100)):
+    """Lista processos com mais publicações."""
+    db = get_db()
+    rows = db.conn.execute("""
+        SELECT numero_processo, tribunal, COUNT(*) as total_publicacoes,
+               MAX(data_publicacao) as ultima_publicacao,
+               GROUP_CONCAT(DISTINCT fonte) as fontes
+        FROM publicacoes
+        WHERE numero_processo IS NOT NULL AND numero_processo != ''
+        GROUP BY numero_processo
+        ORDER BY total_publicacoes DESC
+        LIMIT ?
+    """, (limite,)).fetchall()
+    return {"status": "success", "total": len(rows), "processos": [dict(r) for r in rows]}
