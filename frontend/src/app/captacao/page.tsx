@@ -1,6 +1,7 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useMemo } from "react";
+import { useSearchParams } from "next/navigation";
 import {
   api,
   CaptacaoItem,
@@ -33,7 +34,12 @@ import {
   Search,
   Eye,
   Edit2,
+  ExternalLink,
+  Filter,
+  Globe,
+  Database,
 } from "lucide-react";
+import Link from "next/link";
 
 // =========================================================================
 // Constantes
@@ -75,6 +81,9 @@ const INTERVALO_PRESETS = [
 // =========================================================================
 
 export default function CaptacaoPage() {
+  const searchParams = useSearchParams();
+  const filterNovos = searchParams.get("filter") === "novos";
+
   // State
   const [captacoes, setCaptacoes] = useState<CaptacaoItem[]>([]);
   const [stats, setStats] = useState<CaptacaoStats | null>(null);
@@ -99,6 +108,22 @@ export default function CaptacaoPage() {
   // Edit form
   const [editingCaptacao, setEditingCaptacao] = useState<CaptacaoItem | null>(null);
 
+  // Seen tracking (localStorage)
+  const [seenCaptacoes, setSeenCaptacoes] = useState<Record<number, number>>(() => {
+    if (typeof window === "undefined") return {};
+    try {
+      return JSON.parse(localStorage.getItem("captacao_seen_results") || "{}");
+    } catch { return {}; }
+  });
+
+  const markSeen = useCallback((id: number, total: number) => {
+    setSeenCaptacoes(prev => {
+      const next = { ...prev, [id]: total };
+      localStorage.setItem("captacao_seen_results", JSON.stringify(next));
+      return next;
+    });
+  }, []);
+
   // =========================================================================
   // Data loading
   // =========================================================================
@@ -111,7 +136,29 @@ export default function CaptacaoPage() {
       ]);
 
       if (listData.status === "fulfilled") {
-        setCaptacoes(listData.value.captacoes || []);
+        const caps = listData.value.captacoes || [];
+        setCaptacoes(caps);
+
+        // Auto-expand first captação with novos when ?filter=novos
+        if (filterNovos && caps.length > 0) {
+          const comNovos = caps.find((c: CaptacaoItem) => c.total_novos > 0);
+          if (comNovos) {
+            setExpandedId(comNovos.id);
+            setDetailTab("resultados");
+            // Trigger detail load
+            setIsLoadingDetail(true);
+            try {
+              const [hist, res] = await Promise.allSettled([
+                api.historicoCaptacao(comNovos.id, { limite: 500 }),
+                api.resultadosCaptacao(comNovos.id, { limite: 500 }),
+              ]);
+              if (hist.status === "fulfilled") setHistorico(hist.value.execucoes || []);
+              if (res.status === "fulfilled") setResultados(res.value.publicacoes || []);
+            } finally {
+              setIsLoadingDetail(false);
+            }
+          }
+        }
       }
       if (statsData.status === "fulfilled") {
         setStats(statsData.value);
@@ -122,7 +169,7 @@ export default function CaptacaoPage() {
     } finally {
       setIsLoading(false);
     }
-  }, []);
+  }, [filterNovos]);
 
   useEffect(() => {
     loadData();
@@ -216,6 +263,9 @@ export default function CaptacaoPage() {
       setExpandedId(id);
       setDetailTab("historico");
       loadDetail(id);
+      // Mark as seen with current total
+      const cap = captacoes.find(c => c.id === id);
+      if (cap) markSeen(id, cap.total_resultados);
     }
   };
 
@@ -356,12 +406,16 @@ export default function CaptacaoPage() {
             </button>
           </div>
         ) : (
-          captacoes.map((cap) => (
+          captacoes.map((cap) => {
+            const lastSeen = seenCaptacoes[cap.id] || 0;
+            const unseenCount = Math.max(0, cap.total_resultados - lastSeen);
+            return (
             <CaptacaoCard
               key={cap.id}
               captacao={cap}
               isExpanded={expandedId === cap.id}
               isExecuting={executingId === cap.id}
+              unseenCount={unseenCount}
               onToggleExpand={() => handleToggleExpand(cap.id)}
               onExecutar={() => handleExecutar(cap.id)}
               onClonar={() => handleClonar(cap.id)}
@@ -375,7 +429,8 @@ export default function CaptacaoPage() {
               isLoadingDetail={isLoadingDetail}
               onEditar={() => setEditingCaptacao(cap)}
             />
-          ))
+            );
+          })
         )}
       </div>
     </div>
@@ -390,6 +445,7 @@ function CaptacaoCard({
   captacao,
   isExpanded,
   isExecuting,
+  unseenCount,
   onToggleExpand,
   onExecutar,
   onClonar,
@@ -406,6 +462,7 @@ function CaptacaoCard({
   captacao: CaptacaoItem;
   isExpanded: boolean;
   isExecuting: boolean;
+  unseenCount: number;
   onToggleExpand: () => void;
   onExecutar: () => void;
   onClonar: () => void;
@@ -467,6 +524,11 @@ function CaptacaoCard({
             <span className="inline-flex items-center gap-1"><Eye className="h-3 w-3" /> {searchTarget()}</span>
             <span className="inline-flex items-center gap-1"><Clock className="h-3 w-3" /> {intervaloLabel}</span>
             <span className="inline-flex items-center gap-1"><FileText className="h-3 w-3" /> {captacao.total_resultados} resultados ({captacao.total_novos} novos)</span>
+            {unseenCount > 0 && (
+              <span className="inline-flex items-center gap-1 rounded-full bg-red-500 px-2 py-0.5 text-[10px] font-bold text-white animate-pulse">
+                {unseenCount} nao visto{unseenCount > 1 ? "s" : ""}
+              </span>
+            )}
           </div>
         </div>
 
@@ -606,8 +668,12 @@ function HistoricoTable({ execucoes }: { execucoes: CaptacaoExecucao[] }) {
                 {exec.inicio ? new Date(exec.inicio).toLocaleString("pt-BR", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" }) : "-"}
               </td>
               <td className="py-2 pr-3">
-                <span className="inline-flex items-center rounded-full bg-blue-100 dark:bg-blue-900/30 px-2 py-0.5 text-xs font-medium text-blue-700 dark:text-blue-400">
-                  {exec.fonte}
+                <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium ${
+                  exec.fonte === "djen_api" || exec.fonte === "djen"
+                    ? "bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-400"
+                    : "bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400"
+                }`}>
+                  {exec.fonte === "datajud" ? "DataJud" : exec.fonte === "djen_api" ? "DJEN" : exec.fonte}
                 </span>
               </td>
               <td className="py-2 pr-3">
@@ -637,6 +703,21 @@ function HistoricoTable({ execucoes }: { execucoes: CaptacaoExecucao[] }) {
 // =========================================================================
 
 function ResultadosList({ publicacoes }: { publicacoes: PublicacaoItem[] }) {
+  const [expandedIdx, setExpandedIdx] = useState<number | null>(null);
+  const [fonteFilter, setFonteFilter] = useState<string>("todas");
+  const [visibleCount, setVisibleCount] = useState(20);
+
+  const handleFilterChange = (f: string) => {
+    setFonteFilter(f);
+    setExpandedIdx(null);
+    setVisibleCount(20);
+  };
+
+  const fontesDisponiveis = useMemo(
+    () => Array.from(new Set(publicacoes.map(p => p.fonte).filter(Boolean))),
+    [publicacoes]
+  );
+
   if (publicacoes.length === 0) {
     return (
       <p className="text-center text-sm text-[var(--muted-foreground)] py-4">
@@ -645,35 +726,148 @@ function ResultadosList({ publicacoes }: { publicacoes: PublicacaoItem[] }) {
     );
   }
 
+  const filtered = fonteFilter === "todas"
+    ? publicacoes
+    : publicacoes.filter(p => p.fonte === fonteFilter);
+
   return (
     <div className="space-y-3">
-      {publicacoes.map((pub, idx) => (
-        <div key={pub.id || pub.hash || idx} className="rounded-md border p-3 text-sm">
-          <div className="flex items-center gap-2 mb-1 flex-wrap">
-            <span className="inline-flex items-center gap-1 rounded-full bg-blue-100 dark:bg-blue-900/30 px-2 py-0.5 text-xs font-medium text-blue-700 dark:text-blue-400">
-              {pub.fonte}
-            </span>
-            {pub.tribunal && (
-              <span className="inline-flex items-center gap-1 text-xs text-[var(--muted-foreground)]">
-                <Building2 className="h-3 w-3" /> {pub.tribunal}
-              </span>
-            )}
-            {pub.data_publicacao && (
-              <span className="inline-flex items-center gap-1 text-xs text-[var(--muted-foreground)]">
-                <Calendar className="h-3 w-3" /> {pub.data_publicacao}
-              </span>
-            )}
-            {pub.numero_processo && (
-              <span className="font-mono text-xs text-legal-600">{pub.numero_processo}</span>
+      {/* Filtro por fonte */}
+      {fontesDisponiveis.length > 1 && (
+        <div className="flex items-center gap-2 pb-2 border-b">
+          <Filter className="h-3.5 w-3.5 text-[var(--muted-foreground)]" />
+          <span className="text-xs text-[var(--muted-foreground)]">Filtrar:</span>
+          <button
+            onClick={() => handleFilterChange("todas")}
+            className={`rounded-full px-2.5 py-0.5 text-xs font-medium transition-colors ${
+              fonteFilter === "todas"
+                ? "bg-legal-600 text-white"
+                : "bg-[var(--secondary)] text-[var(--muted-foreground)] hover:bg-[var(--secondary)]/80"
+            }`}
+          >
+            Todas ({publicacoes.length})
+          </button>
+          {fontesDisponiveis.map(f => (
+            <button
+              key={f}
+              onClick={() => handleFilterChange(f!)}
+              className={`inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-xs font-medium transition-colors ${
+                fonteFilter === f
+                  ? f === "datajud" ? "bg-blue-600 text-white" : "bg-amber-600 text-white"
+                  : f === "datajud" ? "bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400 hover:bg-blue-200" : "bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-400 hover:bg-amber-200"
+              }`}
+            >
+              {f === "datajud" ? <Database className="h-3 w-3" /> : <Globe className="h-3 w-3" />}
+              {f === "datajud" ? "DataJud" : f === "djen_api" ? "DJEN" : f} ({publicacoes.filter(p => p.fonte === f).length})
+            </button>
+          ))}
+        </div>
+      )}
+
+      {filtered.slice(0, visibleCount).map((pub, idx) => {
+        const isExpanded = expandedIdx === idx;
+        return (
+          <div
+            key={pub.id || pub.hash || idx}
+            className={`rounded-md border text-sm transition-all cursor-pointer hover:shadow-sm ${
+              pub.fonte === "djen_api" || pub.fonte === "djen"
+                ? "border-l-2 border-l-amber-400"
+                : "border-l-2 border-l-blue-400"
+            }`}
+            onClick={() => setExpandedIdx(isExpanded ? null : idx)}
+          >
+            <div className="p-3">
+              <div className="flex items-center gap-2 mb-1 flex-wrap">
+                <span className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-medium ${
+                  pub.fonte === "djen_api" || pub.fonte === "djen"
+                    ? "bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-400"
+                    : "bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400"
+                }`}>
+                  {pub.fonte === "djen_api" || pub.fonte === "djen" ? <Globe className="h-3 w-3" /> : <Database className="h-3 w-3" />}
+                  {pub.fonte === "datajud" ? "DataJud" : pub.fonte === "djen_api" ? "DJEN" : pub.fonte}
+                </span>
+                {pub.tribunal && (
+                  <span className="inline-flex items-center gap-1 text-xs text-[var(--muted-foreground)]">
+                    <Building2 className="h-3 w-3" /> {pub.tribunal}
+                  </span>
+                )}
+                {pub.data_publicacao && (
+                  <span className="inline-flex items-center gap-1 text-xs text-[var(--muted-foreground)]">
+                    <Calendar className="h-3 w-3" /> {pub.data_publicacao}
+                  </span>
+                )}
+                {pub.numero_processo && (
+                  <Link
+                    href={`/processo?q=${encodeURIComponent(pub.numero_processo)}`}
+                    onClick={(e) => e.stopPropagation()}
+                    className="inline-flex items-center gap-1 font-mono text-xs text-legal-600 hover:text-legal-700 hover:underline"
+                  >
+                    {pub.numero_processo}
+                    <ExternalLink className="h-2.5 w-2.5" />
+                  </Link>
+                )}
+              </div>
+              {pub.conteudo && (
+                <p className={`text-xs text-[var(--muted-foreground)] mt-1 ${isExpanded ? "" : "line-clamp-3"}`}>
+                  {pub.conteudo}
+                </p>
+              )}
+            </div>
+
+            {/* Expanded details */}
+            {isExpanded && (
+              <div className="border-t px-3 py-2 bg-[var(--secondary)]/30 space-y-2">
+                {pub.classe_processual && (
+                  <div className="text-xs"><span className="font-medium text-[var(--card-foreground)]">Classe:</span> <span className="text-[var(--muted-foreground)]">{pub.classe_processual}</span></div>
+                )}
+                {pub.orgao_julgador && (
+                  <div className="text-xs"><span className="font-medium text-[var(--card-foreground)]">Orgao:</span> <span className="text-[var(--muted-foreground)]">{pub.orgao_julgador}</span></div>
+                )}
+                {pub.advogados && pub.advogados.length > 0 && (
+                  <div className="text-xs"><span className="font-medium text-[var(--card-foreground)]">Advogados:</span> <span className="text-[var(--muted-foreground)]">{pub.advogados.join(", ")}</span></div>
+                )}
+                {pub.partes && pub.partes.length > 0 && (
+                  <div className="text-xs"><span className="font-medium text-[var(--card-foreground)]">Partes:</span> <span className="text-[var(--muted-foreground)]">{pub.partes.join(", ")}</span></div>
+                )}
+                {pub.oab_encontradas && pub.oab_encontradas.length > 0 && (
+                  <div className="text-xs"><span className="font-medium text-[var(--card-foreground)]">OABs:</span> <span className="text-[var(--muted-foreground)]">{pub.oab_encontradas.join(", ")}</span></div>
+                )}
+                {pub.numero_processo && (
+                  <Link
+                    href={`/processo?q=${encodeURIComponent(pub.numero_processo)}`}
+                    onClick={(e) => e.stopPropagation()}
+                    className="inline-flex items-center gap-1.5 rounded-md bg-legal-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-legal-700 transition-colors mt-1"
+                  >
+                    <ExternalLink className="h-3 w-3" />
+                    Ver Processo Completo
+                  </Link>
+                )}
+              </div>
             )}
           </div>
-          {pub.conteudo && (
-            <p className="text-xs text-[var(--muted-foreground)] line-clamp-3 mt-1">
-              {pub.conteudo}
-            </p>
-          )}
+        );
+      })}
+
+      {/* Paginação: Carregar mais */}
+      {filtered.length > visibleCount && (
+        <div className="flex flex-col items-center gap-2 pt-2 border-t">
+          <p className="text-xs text-[var(--muted-foreground)]">
+            Exibindo {Math.min(visibleCount, filtered.length)} de {filtered.length} publicacoes
+          </p>
+          <button
+            onClick={() => setVisibleCount(prev => prev + 20)}
+            className="inline-flex items-center gap-1.5 rounded-lg border px-4 py-2 text-xs font-medium text-[var(--foreground)] hover:bg-[var(--secondary)] transition-colors"
+          >
+            <ChevronDown className="h-3.5 w-3.5" />
+            Carregar mais 20
+          </button>
         </div>
-      ))}
+      )}
+      {filtered.length > 0 && filtered.length <= visibleCount && (
+        <p className="text-xs text-[var(--muted-foreground)] text-center pt-2 border-t">
+          Total: {filtered.length} publicacao(oes)
+        </p>
+      )}
     </div>
   );
 }

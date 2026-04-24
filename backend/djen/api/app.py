@@ -94,10 +94,15 @@ def _run_processos_datajud_cycle(limite: int = 50):
                         movs.extend(r.movimentos)
                 
                 if movs:
+                    # Calculate new movimentações
+                    existing = db.obter_processo_monitorado(numero)
+                    old_count = existing.get("total_movimentacoes", 0) if existing else 0
                     db.atualizar_movimentacoes_processo(numero, movs, tribunal=tribunal)
+                    novas = max(0, len(movs) - old_count)
+                    status_str = "ok" if novas > 0 else "sem_mudancas"
                     db.registrar_historico_processo(
-                        numero, "ok", "datajud", len(movs), 0, 
-                        f"Capturadas {len(movs)} movimentacoes."
+                        numero, status_str, "datajud", len(movs), novas, 
+                        f"Capturadas {len(movs)} movimentacoes ({novas} novas)."
                     )
                     atualizados += 1
                 else:

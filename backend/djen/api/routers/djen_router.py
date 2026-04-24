@@ -157,10 +157,18 @@ def buscar_por_advogado(
 ):
     """Busca comunicacoes por nome de advogado."""
     source = get_source()
+    db = get_db()
     t0 = time.time()
     try:
         resultados = source.buscar_por_advogado(nome, data_inicio, data_fim, tribunal)
         elapsed_ms = int((time.time() - t0) * 1000)
+
+        for pub in resultados:
+            db.salvar_publicacao(pub.to_dict())
+
+        db.registrar_busca("advogado", "djen_api", tribunal, nome,
+                           len(resultados), "ok", elapsed_ms)
+
         return BuscaResponse(
             fonte="djen_api", total=len(resultados), tempo_ms=elapsed_ms,
             resultados=[_to_response(r) for r in resultados],
@@ -178,10 +186,18 @@ def buscar_por_parte(
 ):
     """Busca comunicacoes por nome de parte processual."""
     source = get_source()
+    db = get_db()
     t0 = time.time()
     try:
         resultados = source.buscar_por_parte(nome, data_inicio, data_fim, tribunal)
         elapsed_ms = int((time.time() - t0) * 1000)
+
+        for pub in resultados:
+            db.salvar_publicacao(pub.to_dict())
+
+        db.registrar_busca("parte", "djen_api", tribunal, nome,
+                           len(resultados), "ok", elapsed_ms)
+
         return BuscaResponse(
             fonte="djen_api", total=len(resultados), tempo_ms=elapsed_ms,
             resultados=[_to_response(r) for r in resultados],

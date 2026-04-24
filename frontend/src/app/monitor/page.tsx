@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect, useMemo, useCallback } from "react";
+import Link from "next/link";
 import { api, MonitorItem, MonitorStats, PublicacaoItem } from "@/lib/api";
 import { LoadingSpinner } from "@/components/LoadingSpinner";
 import { StatsCard } from "@/components/StatsCard";
@@ -177,12 +178,55 @@ function pubMatchesPeriod(pub: PublicacaoItem, period: PeriodFilter): boolean {
 
 // ─── Inteligência de Lead ───────────────────────────────────────────────────────────────
 
-const FERIADOS_BR = new Set([
-  "2025-01-01","2025-04-18","2025-04-21","2025-05-01","2025-06-19",
-  "2025-09-07","2025-10-12","2025-11-02","2025-11-15","2025-12-25",
-  "2026-01-01","2026-04-03","2026-04-21","2026-05-01","2026-06-04",
-  "2026-09-07","2026-10-12","2026-11-02","2026-11-15","2026-12-25",
-]);
+// Calcula Páscoa pelo algoritmo anônimo gregoriano
+function calcularPascoa(ano: number): Date {
+  const a = ano % 19;
+  const b = Math.floor(ano / 100);
+  const c = ano % 100;
+  const d = Math.floor(b / 4);
+  const e = b % 4;
+  const f = Math.floor((b + 8) / 25);
+  const g = Math.floor((b - f + 1) / 3);
+  const h = (19 * a + b - d - g + 15) % 30;
+  const i = Math.floor(c / 4);
+  const k = c % 4;
+  const l = (32 + 2 * e + 2 * i - h - k) % 7;
+  const m = Math.floor((a + 11 * h + 22 * l) / 451);
+  const mes = Math.floor((h + l - 7 * m + 114) / 31);
+  const dia = ((h + l - 7 * m + 114) % 31) + 1;
+  return new Date(ano, mes - 1, dia);
+}
+
+function gerarFeriadosBR(anos: number[]): Set<string> {
+  const feriados = new Set<string>();
+  for (const ano of anos) {
+    // Feriados fixos
+    const fixos = [
+      `${ano}-01-01`, `${ano}-04-21`, `${ano}-05-01`,
+      `${ano}-09-07`, `${ano}-10-12`, `${ano}-11-02`,
+      `${ano}-11-15`, `${ano}-12-25`,
+    ];
+    fixos.forEach(f => feriados.add(f));
+
+    // Feriados móveis baseados na Páscoa
+    const pascoa = calcularPascoa(ano);
+    const sextaSanta = new Date(pascoa);
+    sextaSanta.setDate(pascoa.getDate() - 2);
+    const corpusChristi = new Date(pascoa);
+    corpusChristi.setDate(pascoa.getDate() + 60);
+    const carnaval = new Date(pascoa);
+    carnaval.setDate(pascoa.getDate() - 47);
+
+    [sextaSanta, corpusChristi, carnaval].forEach(d => {
+      const iso = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+      feriados.add(iso);
+    });
+  }
+  return feriados;
+}
+
+const currentYear = new Date().getFullYear();
+const FERIADOS_BR = gerarFeriadosBR([currentYear - 1, currentYear, currentYear + 1, currentYear + 2]);
 
 function isExecucaoFiscal(item: PublicacaoItem): boolean {
   const haystack = [
@@ -347,9 +391,19 @@ function PubCard({ pub: rawPub, idx, searchQuery, onDelete, seen, onSeen, onTogg
             {/* Número do processo como título principal */}
             <div className="flex items-center gap-2 flex-wrap">
               <FileText className="h-4 w-4 text-legal-600 shrink-0" />
-              <h3 className={`text-sm text-[var(--card-foreground)] font-mono tracking-tight ${!seen ? "font-bold" : "font-medium"}`}>
-                <HighlightText text={processoFormatado || `Publicação #${pub.id ?? idx + 1}`} query={searchQuery} />
-              </h3>
+              {processoFormatado ? (
+                <Link
+                  href={`/processo?q=${encodeURIComponent(pub.numero_processo!)}`}
+                  onClick={(e) => e.stopPropagation()}
+                  className={`text-sm text-legal-600 hover:text-legal-700 hover:underline font-mono tracking-tight ${!seen ? "font-bold" : "font-medium"}`}
+                >
+                  <HighlightText text={processoFormatado} query={searchQuery} />
+                </Link>
+              ) : (
+                <h3 className={`text-sm text-[var(--card-foreground)] font-mono tracking-tight ${!seen ? "font-bold" : "font-medium"}`}>
+                  Publicação #{pub.id ?? idx + 1}
+                </h3>
+              )}
               <FonteBadge fonte={pub.fonte} showLabel />
               <ScoreBadge info={scoreInfo} />
               {!seen && typeof pub.id === "number" && (
@@ -609,6 +663,20 @@ function PubCard({ pub: rawPub, idx, searchQuery, onDelete, seen, onSeen, onTogg
               </div>
             </div>
           )}
+
+          {/* Link para processo */}
+          {pub.numero_processo && (
+            <div className="p-4 border-t">
+              <Link
+                href={`/processo?q=${encodeURIComponent(pub.numero_processo)}`}
+                onClick={(e) => e.stopPropagation()}
+                className="inline-flex items-center gap-1.5 rounded-md bg-legal-600 px-4 py-2 text-xs font-medium text-white hover:bg-legal-700 transition-colors"
+              >
+                <ExternalLink className="h-3.5 w-3.5" />
+                Ver Processo Completo
+              </Link>
+            </div>
+          )}
         </div>
       )}
     </div>
@@ -734,6 +802,8 @@ export default function MonitorPage() {
       return next;
     });
   }, []);
+
+  const [visibleCount, setVisibleCount] = useState(30);
 
   const [showFilters, setShowFilters] = useState(false);
   const [filtroExcluirEF, setFiltroExcluirEF] = useState(false);
@@ -989,6 +1059,7 @@ export default function MonitorPage() {
     setFiltroSemAdvogado(false);
     setFilterPeriod("todos");
     setShowOnlyUnread(false);
+    setVisibleCount(30);
   }, []);
 
   if (isLoading) {
@@ -1494,7 +1565,7 @@ export default function MonitorPage() {
             {/* ── Lista de publicações ── */}
             {pubFiltradas.length > 0 ? (
               <div>
-                {pubFiltradas.map((pub, idx) => (
+                {pubFiltradas.slice(0, visibleCount).map((pub, idx) => (
                   <PubCard
                     key={pub.id ?? idx}
                     pub={pub}
@@ -1506,6 +1577,21 @@ export default function MonitorPage() {
                     onToggleUnseen={() => { if (typeof pub.id === "number") togglePubSeen(pub.id); }}
                   />
                 ))}
+
+                {pubFiltradas.length > visibleCount && (
+                  <div className="flex flex-col items-center gap-2 py-4 border-t">
+                    <p className="text-xs text-[var(--muted-foreground)]">
+                      Exibindo {Math.min(visibleCount, pubFiltradas.length)} de {pubFiltradas.length} publicações
+                    </p>
+                    <button
+                      onClick={() => setVisibleCount(prev => prev + 30)}
+                      className="inline-flex items-center gap-1.5 rounded-lg border px-4 py-2 text-xs font-medium text-[var(--foreground)] hover:bg-[var(--secondary)] transition-colors"
+                    >
+                      <ChevronDown className="h-3.5 w-3.5" />
+                      Carregar mais 30
+                    </button>
+                  </div>
+                )}
 
                 {/* Rodapé total */}
                 <div className="p-3 border-t text-center text-xs text-[var(--muted-foreground)]">

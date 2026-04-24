@@ -40,7 +40,10 @@ import {
   Hash,
   CreditCard,
   Settings,
+  AlertTriangle,
+  Download,
 } from "lucide-react";
+import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { Suspense } from "react";
 
@@ -159,6 +162,7 @@ function ProcessoPageInner() {
   // === Dados DJEN do processo selecionado ===
   const [djenData, setDjenData] = useState<PublicacaoItem[]>([]);
   const [loadingDjen, setLoadingDjen] = useState(false);
+  const [expandedDjenIds, setExpandedDjenIds] = useState<Set<number>>(new Set());
 
   // === Estado Processos Monitorados ===
   const [processos, setProcessos] = useState<ProcessoMonitorado[]>([]);
@@ -181,6 +185,10 @@ function ProcessoPageInner() {
   const [filterStatus, setFilterStatus] = useState("todos");
   const [filterMovimentacao, setFilterMovimentacao] = useState("todos");
   const [showFilters, setShowFilters] = useState(false);
+
+  // === PAGINAÇÃO ===
+  const [tableVisibleCount, setTableVisibleCount] = useState(30);
+  const [timelineVisibleCount, setTimelineVisibleCount] = useState(30);
 
   // === CONFIGURAÇÃO DE CICLO ===
   const [showSettings, setShowSettings] = useState(false);
@@ -319,17 +327,23 @@ function ProcessoPageInner() {
     setFilterStatus("todos");
     setFilterMovimentacao("todos");
     setSortBy("movim-desc");
+    setTableVisibleCount(30);
   }, []);
 
   // === Carregar dados DJEN de um processo ===
   const loadDjenData = useCallback(async (numProcesso: string) => {
     setLoadingDjen(true);
-    setDjenData([]);
     try {
-      const items = await api.buscarLocal({ termo: numProcesso, limite: 500 });
-      setDjenData(items);
-    } catch {
-      // silently fail — DJEN data é complementar
+      const res = await api.buscarDJEN({
+        termo: numProcesso,
+        numero_oab: undefined,
+        nome_advogado: undefined,
+        nome_parte: undefined,
+      });
+      setDjenData(res.resultados || []);
+    } catch (err) {
+      console.error("Erro ao carregar DJEN:", err);
+      setDjenData([]);
     } finally {
       setLoadingDjen(false);
     }
@@ -387,11 +401,21 @@ function ProcessoPageInner() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // Handle ?filter=recente from Dashboard
+  const filterParam = searchParams.get("filter");
+  useEffect(() => {
+    if (filterParam === "recente") {
+      setFilterMovimentacao("recente");
+      setPageMode("monitorados");
+    }
+  }, [filterParam]);
+
   // Quando seleciona um processo, carrega dados DJEN em paralelo
   useEffect(() => {
     if (selectedProcesso) {
       loadDjenData(selectedProcesso.numero_processo);
       loadHistory(selectedProcesso.numero_processo);
+      setTimelineVisibleCount(30);
     }
   }, [selectedProcesso, loadDjenData, loadHistory]);
 
@@ -418,15 +442,15 @@ function ProcessoPageInner() {
 
     try {
       // Busca DataJud + DJEN em paralelo
-      const [data, djenItems] = await Promise.all([
+      const [data, djenRes] = await Promise.all([
         api.analisarProcesso({
           numero_processo: numero.trim(),
           tribunal: tribunal || undefined,
         }),
-        api.buscarLocal({ termo: numero.trim(), limite: 500 }).catch(() => []),
+        api.buscarDJEN({ termo: numero.trim(), numero_oab: undefined, nome_advogado: undefined, nome_parte: undefined }).catch(() => ({ resultados: [] })),
       ]);
       setResult(data);
-      setDjenData(djenItems);
+      setDjenData(djenRes.resultados || []);
 
       const [resumoData, timelineData, riscosData] = await Promise.allSettled([
         api.getResumo(numero.trim()),
@@ -782,6 +806,38 @@ function ProcessoPageInner() {
             </div>
             <div className="flex gap-2">
               <button
+                onClick={() => {
+                  const json = JSON.stringify(processos, null, 2);
+                  const blob = new Blob([json], { type: "application/json" });
+                  const url = URL.createObjectURL(blob);
+                  const a = document.createElement("a");
+                  a.href = url; a.download = "processos_monitorados.json"; a.click();
+                  URL.revokeObjectURL(url);
+                }}
+                className="flex items-center gap-1.5 rounded-lg border px-3 py-2 text-xs font-medium text-blue-600 hover:bg-blue-50 dark:hover:bg-blue-900/20 transition-colors"
+                title="Exportar JSON"
+              >
+                <Download className="h-3.5 w-3.5" />
+                JSON
+              </button>
+              <button
+                onClick={() => {
+                  const csv = ["Processo,Tribunal,Classe,Movimentações,Última Movimentação,Status"]
+                    .concat(processos.map(p => `"${p.numero_processo}","${p.tribunal || ''}","${p.classe_processual || ''}",${p.total_movimentacoes},"${p.data_ultima_movimentacao || ''}","${p.status || ''}"`))
+                    .join("\n");
+                  const blob = new Blob([csv], { type: "text/csv" });
+                  const url = URL.createObjectURL(blob);
+                  const a = document.createElement("a");
+                  a.href = url; a.download = "processos_monitorados.csv"; a.click();
+                  URL.revokeObjectURL(url);
+                }}
+                className="flex items-center gap-1.5 rounded-lg border px-3 py-2 text-xs font-medium text-green-600 hover:bg-green-50 dark:hover:bg-green-900/20 transition-colors"
+                title="Exportar CSV"
+              >
+                <Download className="h-3.5 w-3.5" />
+                CSV
+              </button>
+              <button
                 onClick={loadProcessos}
                 className="flex items-center gap-2 text-sm text-[var(--muted-foreground)] hover:text-[var(--foreground)]"
               >
@@ -803,13 +859,20 @@ function ProcessoPageInner() {
             <div className="rounded-lg border bg-[var(--card)] p-4">
               <h3 className="text-sm font-semibold text-[var(--card-foreground)] mb-3">Adicionar Processo para Monitoramento</h3>
               <div className="flex gap-3">
-                <input
-                  type="text"
-                  value={novoProcesso.numero_processo}
-                  onChange={(e) => setNovoProcesso({ ...novoProcesso, numero_processo: e.target.value })}
-                  placeholder="Número CNJ: 0000000-00.0000.0.00.0000"
-                  className="flex-1 rounded-lg border bg-[var(--background)] px-3 py-2 text-sm text-[var(--foreground)] placeholder:text-[var(--muted-foreground)]"
-                />
+                <div className="flex-1">
+                  <input
+                    type="text"
+                    value={novoProcesso.numero_processo}
+                    onChange={(e) => setNovoProcesso({ ...novoProcesso, numero_processo: e.target.value })}
+                    placeholder="Número CNJ: 0000000-00.0000.0.00.0000"
+                    className="w-full rounded-lg border bg-[var(--background)] px-3 py-2 text-sm text-[var(--foreground)] placeholder:text-[var(--muted-foreground)]"
+                  />
+                  {novoProcesso.numero_processo && !/^\d{7}-\d{2}\.\d{4}\.\d{1,2}\.\d{2}\.\d{4}$/.test(novoProcesso.numero_processo) && novoProcesso.numero_processo.replace(/\D/g, "").length !== 20 && (
+                    <p className="text-xs text-amber-600 mt-1">
+                      Formato esperado: 0000000-00.0000.0.00.0000 (20 dígitos)
+                    </p>
+                  )}
+                </div>
                 <input
                   type="text"
                   value={novoProcesso.tribunal}
@@ -819,7 +882,7 @@ function ProcessoPageInner() {
                 />
                 <button
                   onClick={handleAddProcesso}
-                  disabled={addingProcesso || !novoProcesso.numero_processo.trim()}
+                  disabled={addingProcesso || !novoProcesso.numero_processo.trim() || (!/^\d{7}-\d{2}\.\d{4}\.\d{1,2}\.\d{2}\.\d{4}$/.test(novoProcesso.numero_processo) && novoProcesso.numero_processo.replace(/\D/g, "").length !== 20)}
                   className="rounded-lg bg-legal-600 px-4 py-2 text-sm font-medium text-white hover:bg-legal-700 disabled:opacity-50"
                 >
                   {addingProcesso ? "Salvando..." : "Salvar"}
@@ -1037,7 +1100,7 @@ function ProcessoPageInner() {
                     <div className="absolute left-[11px] top-0 bottom-0 w-px bg-[var(--border)]" />
 
                     <div className="space-y-1">
-                      {unifiedItems.map((item, idx) => {
+                      {unifiedItems.slice(0, timelineVisibleCount).map((item, idx) => {
                         const isDatajud = item.source === "datajud";
                         const dotColor = isDatajud ? "bg-blue-500" : "bg-amber-500";
                         const borderColor = isDatajud ? "border-blue-500/20" : "border-amber-500/20";
@@ -1066,7 +1129,16 @@ function ProcessoPageInner() {
                                   <span className="inline-flex items-center gap-1 rounded-full bg-blue-500/10 border border-blue-500/20 px-2 py-0.5 text-[10px] font-semibold text-blue-700 uppercase tracking-wider">
                                     <Activity className="h-3 w-3" /> DataJud
                                   </span>
-                                  <span className="text-xs text-[var(--muted-foreground)]">{dateStr}</span>
+                                  {item.date ? (
+                                    <span className="shrink-0 rounded bg-[var(--secondary)] px-2 py-0.5 text-xs font-mono text-[var(--muted-foreground)]">
+                                      {dateStr}
+                                    </span>
+                                  ) : (
+                                    <span className="shrink-0 rounded bg-amber-100 dark:bg-amber-900/30 px-2 py-0.5 text-xs font-mono text-amber-600 flex items-center gap-1">
+                                      <AlertTriangle className="h-3 w-3" />
+                                      Data indisponível
+                                    </span>
+                                  )}
                                   {mov.codigo && (
                                     <span className="text-[10px] text-[var(--muted-foreground)] font-mono bg-[var(--secondary)] rounded px-1.5 py-0.5">Cod: {String(mov.codigo)}</span>
                                   )}
@@ -1106,7 +1178,16 @@ function ProcessoPageInner() {
                                   <span className="inline-flex items-center gap-1 rounded-full bg-amber-500/10 border border-amber-500/20 px-2 py-0.5 text-[10px] font-semibold text-amber-700 uppercase tracking-wider">
                                     <Globe className="h-3 w-3" /> {pub.fonte || "DJEN"}
                                   </span>
-                                  <span className="text-xs text-[var(--muted-foreground)]">{dateStr}</span>
+                                  {item.date ? (
+                                    <span className="shrink-0 rounded bg-[var(--secondary)] px-2 py-0.5 text-xs font-mono text-[var(--muted-foreground)]">
+                                      {dateStr}
+                                    </span>
+                                  ) : (
+                                    <span className="shrink-0 rounded bg-amber-100 dark:bg-amber-900/30 px-2 py-0.5 text-xs font-mono text-amber-600 flex items-center gap-1">
+                                      <AlertTriangle className="h-3 w-3" />
+                                      Data indisponível
+                                    </span>
+                                  )}
                                   {pub.tribunal && <span className="text-[10px] text-[var(--muted-foreground)]"><Building2 className="inline h-3 w-3 mr-0.5" />{pub.tribunal}</span>}
                                   {pub.caderno && <span className="text-[10px] text-[var(--muted-foreground)]">Caderno {pub.caderno}{pub.pagina ? `, p. ${pub.pagina}` : ""}</span>}
                                 </div>
@@ -1194,6 +1275,19 @@ function ProcessoPageInner() {
                         }
                       })}
                     </div>
+                    {unifiedItems.length > timelineVisibleCount && (
+                      <div className="flex flex-col items-center gap-2 py-3">
+                        <p className="text-xs text-[var(--muted-foreground)]">
+                          Exibindo {Math.min(timelineVisibleCount, unifiedItems.length)} de {unifiedItems.length} eventos
+                        </p>
+                        <button
+                          onClick={() => setTimelineVisibleCount(prev => prev + 30)}
+                          className="inline-flex items-center gap-1.5 rounded-lg border px-4 py-2 text-xs font-medium text-[var(--foreground)] hover:bg-[var(--secondary)] transition-colors"
+                        >
+                          Carregar mais 30
+                        </button>
+                      </div>
+                    )}
                   </div>
                 ) : (
                   <div className="rounded-lg bg-[var(--secondary)] p-4 text-center text-sm text-[var(--muted-foreground)]">
@@ -1223,7 +1317,7 @@ function ProcessoPageInner() {
                   </tr>
                 </thead>
                 <tbody>
-                  {processosFiltrados.map((p) => {
+                  {processosFiltrados.slice(0, tableVisibleCount).map((p) => {
                     const hasUnseen = p.total_movimentacoes > 0 && p.total_movimentacoes !== (seenProcessos[p.numero_processo] ?? -1);
                     return (
                        <tr
@@ -1301,6 +1395,19 @@ function ProcessoPageInner() {
                   })}
                 </tbody>
               </table>
+              {processosFiltrados.length > tableVisibleCount && (
+                <div className="flex flex-col items-center gap-2 py-3 border-t">
+                  <p className="text-xs text-[var(--muted-foreground)]">
+                    Exibindo {Math.min(tableVisibleCount, processosFiltrados.length)} de {processosFiltrados.length} processos
+                  </p>
+                  <button
+                    onClick={() => setTableVisibleCount(prev => prev + 30)}
+                    className="inline-flex items-center gap-1.5 rounded-lg border px-4 py-2 text-xs font-medium text-[var(--foreground)] hover:bg-[var(--secondary)] transition-colors"
+                  >
+                    Carregar mais 30
+                  </button>
+                </div>
+              )}
               <div className="p-3 border-t text-center text-xs text-[var(--muted-foreground)]">
                 Total: <span className="font-semibold text-[var(--card-foreground)]">{processosFiltrados.length}</span> processos
                 {processosFiltrados.length !== processos.length && (
@@ -1595,15 +1702,37 @@ function ProcessoPageInner() {
                     </h3>
                     {djenData.length > 0 ? (
                       <div className="space-y-3">
-                        {djenData.map((pub, idx) => (
-                          <div key={pub.id ?? idx} className="rounded-lg border p-4">
+                        {djenData.map((pub, idx) => {
+                          const isExpanded = expandedDjenIds.has(idx);
+                          return (
+                          <div
+                            key={pub.id ?? idx}
+                            className="rounded-lg border p-4 cursor-pointer hover:border-amber-400 transition-colors"
+                            onClick={() => setExpandedDjenIds(prev => {
+                              const next = new Set(prev);
+                              if (next.has(idx)) next.delete(idx); else next.add(idx);
+                              return next;
+                            })}
+                          >
                             <div className="flex items-center gap-2 mb-2 flex-wrap">
                               <span className="inline-flex items-center gap-1 rounded-full border border-amber-500/20 bg-amber-500/10 px-2.5 py-0.5 text-xs font-semibold text-amber-700">
                                 <Globe className="h-3 w-3" /> {pub.fonte || "DJEN"}
                               </span>
+                              {pub.numero_processo && (
+                                <Link
+                                  href={`/processo?q=${encodeURIComponent(pub.numero_processo)}`}
+                                  className="font-mono text-xs text-legal-600 hover:text-legal-700 hover:underline"
+                                  onClick={(e) => e.stopPropagation()}
+                                >
+                                  {formatProcessoCNJ(pub.numero_processo)}
+                                </Link>
+                              )}
                               {pub.tribunal && <span className="text-xs text-[var(--muted-foreground)]"><Building2 className="inline h-3 w-3 mr-0.5" />{pub.tribunal}</span>}
                               {pub.data_publicacao && <span className="text-xs text-[var(--muted-foreground)]"><Calendar className="inline h-3 w-3 mr-0.5" />{pub.data_publicacao}</span>}
                               {pub.caderno && <span className="text-xs text-[var(--muted-foreground)]">Caderno {pub.caderno}{pub.pagina ? `, p. ${pub.pagina}` : ""}</span>}
+                              <span className="ml-auto text-[var(--muted-foreground)]">
+                                {isExpanded ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
+                              </span>
                             </div>
                             {pub.classe_processual && (
                               <p className="text-sm font-medium text-[var(--card-foreground)] mb-1">
@@ -1611,31 +1740,45 @@ function ProcessoPageInner() {
                               </p>
                             )}
                             {pub.conteudo && (
-                              <p className="text-sm text-[var(--muted-foreground)] whitespace-pre-line leading-relaxed">{pub.conteudo}</p>
+                              <p className={`text-sm text-[var(--muted-foreground)] whitespace-pre-line leading-relaxed ${!isExpanded ? "line-clamp-3" : ""}`}>{pub.conteudo}</p>
                             )}
-                            {pub.advogados && pub.advogados.length > 0 && (
-                              <div className="mt-2">
-                                <p className="text-xs font-semibold text-purple-600 mb-1"><Briefcase className="inline h-3 w-3 mr-1" />Advogados</p>
-                                <ul className="space-y-0.5">
-                                  {pub.advogados.map((a, i) => <li key={i} className="text-xs text-[var(--card-foreground)]">- {a}</li>)}
-                                </ul>
-                              </div>
-                            )}
-                            {pub.partes && pub.partes.length > 0 && (
-                              <div className="mt-2">
-                                <p className="text-xs font-semibold text-blue-600 mb-1"><Users className="inline h-3 w-3 mr-1" />Partes</p>
-                                <ul className="space-y-0.5">
-                                  {pub.partes.map((pt, i) => <li key={i} className="text-xs text-[var(--card-foreground)]">- {pt}</li>)}
-                                </ul>
-                              </div>
-                            )}
-                            {pub.url_origem && (
-                              <a href={pub.url_origem} target="_blank" rel="noopener noreferrer" className="mt-2 inline-flex items-center gap-1 text-xs text-legal-600 hover:underline">
-                                <ExternalLink className="h-3 w-3" /> Ver publicação original
-                              </a>
+                            {isExpanded && (
+                              <>
+                                {pub.advogados && pub.advogados.length > 0 && (
+                                  <div className="mt-2">
+                                    <p className="text-xs font-semibold text-purple-600 mb-1"><Briefcase className="inline h-3 w-3 mr-1" />Advogados</p>
+                                    <ul className="space-y-0.5">
+                                      {pub.advogados.map((a, i) => <li key={i} className="text-xs text-[var(--card-foreground)]">- {a}</li>)}
+                                    </ul>
+                                  </div>
+                                )}
+                                {pub.partes && pub.partes.length > 0 && (
+                                  <div className="mt-2">
+                                    <p className="text-xs font-semibold text-blue-600 mb-1"><Users className="inline h-3 w-3 mr-1" />Partes</p>
+                                    <ul className="space-y-0.5">
+                                      {pub.partes.map((pt, i) => <li key={i} className="text-xs text-[var(--card-foreground)]">- {pt}</li>)}
+                                    </ul>
+                                  </div>
+                                )}
+                                {pub.url_origem && (
+                                  <a href={pub.url_origem} target="_blank" rel="noopener noreferrer" className="mt-2 inline-flex items-center gap-1 text-xs text-legal-600 hover:underline" onClick={(e) => e.stopPropagation()}>
+                                    <ExternalLink className="h-3 w-3" /> Ver publicação original
+                                  </a>
+                                )}
+                                {pub.numero_processo && (
+                                  <Link
+                                    href={`/processo?q=${encodeURIComponent(pub.numero_processo)}`}
+                                    className="mt-2 ml-3 inline-flex items-center gap-1 rounded-lg border border-legal-600/30 bg-legal-600/5 px-3 py-1.5 text-xs font-medium text-legal-600 hover:bg-legal-600/10 transition-colors"
+                                    onClick={(e) => e.stopPropagation()}
+                                  >
+                                    <Eye className="h-3 w-3" /> Ver Processo
+                                  </Link>
+                                )}
+                              </>
                             )}
                           </div>
-                        ))}
+                          );
+                        })}
                       </div>
                     ) : (
                       <p className="text-[var(--muted-foreground)]">

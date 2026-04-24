@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
+import Link from "next/link";
 import { api } from "@/lib/api";
 import { LoadingSpinner } from "@/components/LoadingSpinner";
 import {
@@ -142,16 +143,49 @@ export default function PesquisasPage() {
     setSearching(true);
     setSearchResults(null);
     try {
-      const res = await api.buscaUnificada({
-        termo,
-        tribunal: tribunal || undefined,
-        data_inicio: dataInicio || undefined,
-        data_fim: dataFim || undefined,
-      });
-      setSearchResults(res);
+      if (fontes.includes("datajud") && fontes.includes("djen_api")) {
+        // Both selected — use unified search
+        const res = await api.buscaUnificada({
+          termo,
+          tribunal: tribunal || undefined,
+          data_inicio: dataInicio || undefined,
+          data_fim: dataFim || undefined,
+        });
+        setSearchResults(res);
+      } else if (fontes.includes("datajud")) {
+        // Only DataJud
+        const res = await api.buscarDataJud({
+          termo,
+          tribunal: tribunal || undefined,
+          data_inicio: dataInicio || undefined,
+          data_fim: dataFim || undefined,
+        });
+        setSearchResults({
+          total_geral: res.total || 0,
+          tempo_total_ms: res.tempo_ms || 0,
+          resultados_por_fonte: { datajud: { resultados: res.resultados || [] } },
+        });
+      } else if (fontes.includes("djen_api")) {
+        // Only DJEN
+        const res = await api.buscarDJEN({
+          termo,
+          tribunal: tribunal || undefined,
+          data_inicio: dataInicio || undefined,
+          data_fim: dataFim || undefined,
+        });
+        setSearchResults({
+          total_geral: res.total || 0,
+          tempo_total_ms: res.tempo_ms || 0,
+          resultados_por_fonte: { djen_api: { resultados: res.resultados || [] } },
+        });
+      } else {
+        alert("Selecione pelo menos uma fonte de busca.");
+        setSearching(false);
+        return;
+      }
       await loadPesquisas();
     } catch (err) {
-      alert("Erro ao realizar busca unificada");
+      alert("Erro ao realizar busca");
     } finally {
       setSearching(false);
     }
@@ -161,11 +195,34 @@ export default function PesquisasPage() {
     if (!termo.trim()) return;
     const nome = prompt("Nome da captação:", `Captação: ${termo}`);
     if (!nome) return;
+
+    // Auto-detect tipo_busca from termo
+    const termoLimpo = termo.trim();
+    const isProcesso = /^\d{7}-\d{2}\.\d{4}\.\d{1,2}\.\d{2}\.\d{4}$/.test(termoLimpo) || /^\d{20}$/.test(termoLimpo);
+    const isOAB = /^\d{3,6}\/[A-Z]{2}$/i.test(termoLimpo) || /^[A-Z]{2}\d{3,6}$/i.test(termoLimpo);
+
+    let tipo_busca = "nome_parte";
+    const params: any = { nome_parte: termoLimpo };
+
+    if (isProcesso) {
+      tipo_busca = "processo";
+      delete params.nome_parte;
+      params.numero_processo = termoLimpo;
+    } else if (isOAB) {
+      tipo_busca = "oab";
+      delete params.nome_parte;
+      const m1 = termoLimpo.match(/^(\d{3,6})\/([A-Z]{2})$/i);
+      const m2 = termoLimpo.match(/^([A-Z]{2})(\d{3,6})$/i);
+      if (m1) { params.numero_oab = m1[1]; params.uf_oab = m1[2].toUpperCase(); }
+      else if (m2) { params.uf_oab = m2[1].toUpperCase(); params.numero_oab = m2[2]; }
+      else { params.numero_oab = termoLimpo; }
+    }
+
     try {
       await api.criarCaptacao({
         nome,
-        tipo_busca: "nome_parte",
-        nome_parte: termo,
+        tipo_busca,
+        ...params,
         tribunal: tribunal || undefined,
         data_inicio: dataInicio || undefined,
         data_fim: dataFim || undefined,
@@ -332,7 +389,15 @@ export default function PesquisasPage() {
               <Search className="h-5 w-5 text-legal-600" />
               Resultados da Busca
               <span className="text-sm font-normal text-[var(--muted-foreground)] ml-2">
-                ({searchResults.total_geral} encontrados em {searchResults.tempo_total_ms}ms)
+                ({searchResults.total_geral} encontrados em {searchResults.tempo_total_ms}ms
+                {Object.entries(searchResults.resultados_por_fonte).map(([fonte, data]: [string, any]) => (
+                  <span key={fonte} className={`ml-2 inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-medium ${
+                    fonte === "datajud" ? "bg-blue-100 text-blue-700" : "bg-amber-100 text-amber-700"
+                  }`}>
+                    {fonte === "datajud" ? "DataJud" : "DJEN"}: {data.resultados?.length || 0}
+                  </span>
+                ))}
+                )
               </span>
             </h2>
             <button onClick={() => setSearchResults(null)} className="text-xs text-[var(--muted-foreground)] hover:text-red-500">
@@ -353,9 +418,19 @@ export default function PesquisasPage() {
                   data.resultados.map((r: any, idx: number) => (
                     <div key={idx} className="rounded-lg border bg-[var(--card)] p-4 hover:shadow-md transition-shadow">
                        <div className="flex items-center gap-2 mb-2">
-                          <span className="text-sm font-mono font-bold text-legal-600">
-                            {formatProcessoCNJ(r.numero_processo || r.numeroProcesso || "")}
-                          </span>
+                          {(r.numero_processo || r.numeroProcesso) ? (
+                            <Link
+                              href={`/processo?q=${encodeURIComponent(r.numero_processo || r.numeroProcesso)}`}
+                              className="text-sm font-mono font-bold text-legal-600 hover:text-legal-700 hover:underline"
+                              onClick={(e) => e.stopPropagation()}
+                            >
+                              {formatProcessoCNJ(r.numero_processo || r.numeroProcesso)}
+                            </Link>
+                          ) : (
+                            <span className="text-sm font-mono font-bold text-[var(--muted-foreground)]">
+                              Sem número
+                            </span>
+                          )}
                           <span className="text-xs text-[var(--muted-foreground)]">•</span>
                           <span className="text-xs text-[var(--muted-foreground)]">{r.tribunal}</span>
                           {r.data_publicacao && (
@@ -486,9 +561,13 @@ export default function PesquisasPage() {
                               {r.tribunal && <span className="text-xs text-[var(--muted-foreground)]">{r.tribunal}</span>}
                               {r.data_publicacao && <span className="text-xs text-[var(--muted-foreground)]"><Calendar className="inline h-3 w-3 mr-0.5" />{r.data_publicacao}</span>}
                               {r.numero_processo && (
-                                <span className="text-xs font-mono font-bold text-[var(--card-foreground)]">
+                                <Link
+                                  href={`/processo?q=${encodeURIComponent(r.numero_processo)}`}
+                                  onClick={(e) => e.stopPropagation()}
+                                  className="text-xs font-mono font-bold text-legal-600 hover:text-legal-700 hover:underline"
+                                >
                                   {formatProcessoCNJ(r.numero_processo)}
-                                </span>
+                                </Link>
                               )}
                             </div>
                             {r.classe_processual && (

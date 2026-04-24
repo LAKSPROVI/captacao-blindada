@@ -804,7 +804,7 @@ export default function DashboardPage() {
 
             {/* Insight: Captacao */}
             {captacaoStats && captacaoStats.total_novos_encontrados > 0 && (
-              <Link href="/captacao" className="flex items-start gap-3 rounded-lg bg-green-500/5 border border-green-500/10 px-3 py-2.5 hover:bg-green-500/10 transition-colors cursor-pointer group">
+              <Link href="/captacao?filter=novos" className="flex items-start gap-3 rounded-lg bg-green-500/5 border border-green-500/10 px-3 py-2.5 hover:bg-green-500/10 transition-colors cursor-pointer group">
                 <Zap className="h-4 w-4 text-green-500 mt-0.5 shrink-0" />
                 <div className="flex-1">
                   <p className="text-xs font-semibold text-[var(--card-foreground)]">
