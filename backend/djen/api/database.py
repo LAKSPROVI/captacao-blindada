@@ -519,8 +519,15 @@ class Database:
         conditions = []
         params = []
         if fonte:
-            conditions.append("fonte=?")
-            params.append(fonte)
+            # Suporta valores separados por vírgula: "djen_api,djen"
+            fontes = [f.strip() for f in fonte.split(",") if f.strip()]
+            if len(fontes) == 1:
+                conditions.append("fonte=?")
+                params.append(fontes[0])
+            else:
+                placeholders = ",".join(["?"] * len(fontes))
+                conditions.append(f"fonte IN ({placeholders})")
+                params.extend(fontes)
         if tribunal:
             conditions.append("tribunal=?")
             params.append(tribunal.upper())

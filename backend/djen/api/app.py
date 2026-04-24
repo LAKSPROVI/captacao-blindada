@@ -10,6 +10,7 @@ Execucao:
     python -m djen.api.app
 """
 
+import json
 import logging
 import os
 import sys
@@ -94,15 +95,43 @@ def _run_processos_datajud_cycle(limite: int = 50):
                         movs.extend(r.movimentos)
                 
                 if movs:
-                    # Calculate new movimentações
+                    # Hash-based diff: detect truly new movimentações
                     existing = db.obter_processo_monitorado(numero)
-                    old_count = existing.get("total_movimentacoes", 0) if existing else 0
+                    old_movs = existing.get("movimentacoes", []) if existing else []
+                    old_hashes = set()
+                    for m in old_movs:
+                        try:
+                            old_hashes.add(hash(json.dumps(m, sort_keys=True, ensure_ascii=False)))
+                        except (TypeError, ValueError):
+                            pass
+                    
+                    novas_movs = []
+                    for m in movs:
+                        try:
+                            h = hash(json.dumps(m, sort_keys=True, ensure_ascii=False))
+                        except (TypeError, ValueError):
+                            h = None
+                        if h is not None and h not in old_hashes:
+                            novas_movs.append(m)
+                    
+                    novas = len(novas_movs)
                     db.atualizar_movimentacoes_processo(numero, movs, tribunal=tribunal)
-                    novas = max(0, len(movs) - old_count)
                     status_str = "ok" if novas > 0 else "sem_mudancas"
+                    
+                    # Build detail string with info about new movimentações
+                    detalhes = f"Capturadas {len(movs)} movimentacoes ({novas} novas)."
+                    if novas_movs:
+                        resumo_novas = []
+                        for nm in novas_movs[:5]:
+                            data = nm.get("dataHora", "sem data") if isinstance(nm, dict) else "?"
+                            nome = nm.get("nome", nm.get("complemento", "?")) if isinstance(nm, dict) else "?"
+                            resumo_novas.append(f"{data}: {nome}")
+                        detalhes += " Novas: " + "; ".join(resumo_novas)
+                        if novas > 5:
+                            detalhes += f" ... e mais {novas - 5}"
+                    
                     db.registrar_historico_processo(
-                        numero, status_str, "datajud", len(movs), novas, 
-                        f"Capturadas {len(movs)} movimentacoes ({novas} novas)."
+                        numero, status_str, "datajud", len(movs), novas, detalhes
                     )
                     atualizados += 1
                 else:

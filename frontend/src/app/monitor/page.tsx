@@ -847,10 +847,8 @@ export default function MonitorPage() {
 
   // ── Busca robusta: tokeniza query em termos, publica match se TODOS os termos batem ──
   const pubFiltradas = useMemo(() => {
-    // Filtro base: apenas publicações de diários oficiais (DJEN)
-    let filtered = publicacoes.filter(p => 
-      p.fonte === "djen_api" || p.fonte === "djen"
-    );
+    // Publicações já vêm filtradas por fonte=djen_api,djen do backend
+    let filtered = [...publicacoes];
 
     // Filtro por monitor selecionado
     if (selectedMonitorId !== null) {
@@ -1008,7 +1006,7 @@ export default function MonitorPage() {
     setIsLoadingPubs(true);
     try {
       // Carrega em batches de 500 (limite máximo da API)
-      const rawPubs = await api.getPublicacoesRecentes({ limite: 500 });
+      const rawPubs = await api.getPublicacoesRecentes({ fonte: "djen_api,djen", limite: 500 });
       const pubs = rawPubs.map(sanitizePublicacao);
       setPublicacoes(pubs);
       setShowPublicacoes(true);
