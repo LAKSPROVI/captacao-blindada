@@ -70,8 +70,18 @@ class CaptacaoService:
             if not data_fim:
                 data_fim = agora_brasilia().strftime("%Y-%m-%d")
             if not data_inicio:
-                # Default 30 dias se nao especificado
-                data_inicio = (agora_brasilia() - timedelta(days=30)).strftime("%Y-%m-%d")
+                # Usar data da ultima execucao se disponivel (busca incremental)
+                ultima = cap.get("ultima_execucao")
+                if ultima:
+                    try:
+                        # ultima_execucao pode ser ISO ou datetime string
+                        dt = ultima[:10]  # pega YYYY-MM-DD
+                        data_inicio = dt
+                    except Exception:
+                        data_inicio = (agora_brasilia() - timedelta(days=7)).strftime("%Y-%m-%d")
+                else:
+                    # Primeira execucao: busca ultimos 30 dias
+                    data_inicio = (agora_brasilia() - timedelta(days=30)).strftime("%Y-%m-%d")
         
         if tipo == "processo":
             numero = cap.get("numero_processo")
@@ -150,7 +160,17 @@ class CaptacaoService:
             if not data_fim:
                 data_fim = agora_brasilia().strftime("%Y-%m-%d")
             if not data_inicio:
-                data_inicio = (agora_brasilia() - timedelta(days=30)).strftime("%Y-%m-%d")
+                # Usar data da ultima execucao se disponivel (busca incremental)
+                ultima = cap.get("ultima_execucao")
+                if ultima:
+                    try:
+                        dt = ultima[:10]  # pega YYYY-MM-DD
+                        data_inicio = dt
+                    except Exception:
+                        data_inicio = (agora_brasilia() - timedelta(days=7)).strftime("%Y-%m-%d")
+                else:
+                    # Primeira execucao: busca ultimos 30 dias
+                    data_inicio = (agora_brasilia() - timedelta(days=30)).strftime("%Y-%m-%d")
 
         base = {
             "tribunal": cap.get("tribunal"),
