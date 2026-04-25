@@ -552,6 +552,23 @@ function CaptacaoCard({
     return "-";
   };
 
+  // Format date helper
+  const fmtDate = (d?: string) => {
+    if (!d) return null;
+    try { const [y, m, day] = d.split("-"); return `${day}/${m}/${y}`; } catch { return d; }
+  };
+
+  const periodoDisplay = () => {
+    const di = fmtDate(captacao.data_inicio);
+    const df = fmtDate(captacao.data_fim);
+    const ue = captacao.ultima_execucao ? fmtDate(captacao.ultima_execucao.substring(0, 10)) : null;
+    if (captacao.modalidade === "faixa_fixa" && di && df) return `${di} → ${df}`;
+    if (di && ue) return `${di} → ${ue} (incremental)`;
+    if (di) return `A partir de ${di}`;
+    if (ue) return `Desde ultima exec. (${ue})`;
+    return "Ultimos 30 dias (auto)";
+  };
+
   return (
     <div className="rounded-lg border bg-[var(--card)] shadow-sm overflow-hidden">
       {/* Header row */}
@@ -574,6 +591,7 @@ function CaptacaoCard({
           <div className="flex items-center gap-3 mt-1 text-xs text-[var(--muted-foreground)] flex-wrap">
             <span className="inline-flex items-center gap-1"><Search className="h-3 w-3" /> {tipoLabel}</span>
             <span className="inline-flex items-center gap-1"><Eye className="h-3 w-3" /> {searchTarget()}</span>
+            <span className="inline-flex items-center gap-1"><Calendar className="h-3 w-3" /> {periodoDisplay()}</span>
             <span className="inline-flex items-center gap-1"><Clock className="h-3 w-3" /> {intervaloLabel}</span>
             <span className="inline-flex items-center gap-1"><FileText className="h-3 w-3" /> {captacao.total_resultados} resultados ({captacao.total_novos} novos)</span>
             {unseenCount > 0 && (
@@ -700,6 +718,22 @@ function HistoricoTable({ execucoes }: { execucoes: CaptacaoExecucao[] }) {
     );
   }
 
+  const parseDatas = (json?: string): { inicio?: string; fim?: string } => {
+    if (!json) return {};
+    try {
+      const p = JSON.parse(json);
+      return { inicio: p.data_inicio, fim: p.data_fim };
+    } catch { return {}; }
+  };
+
+  const fmtDate = (d?: string) => {
+    if (!d) return "—";
+    try {
+      const [y, m, day] = d.split("-");
+      return `${day}/${m}/${y}`;
+    } catch { return d; }
+  };
+
   return (
     <div className="overflow-x-auto">
       <table className="w-full text-sm">
@@ -707,6 +741,7 @@ function HistoricoTable({ execucoes }: { execucoes: CaptacaoExecucao[] }) {
           <tr className="border-b text-left text-xs text-[var(--muted-foreground)]">
             <th className="pb-2 pr-3">Inicio</th>
             <th className="pb-2 pr-3">Fonte</th>
+            <th className="pb-2 pr-3">Periodo Buscado</th>
             <th className="pb-2 pr-3">Status</th>
             <th className="pb-2 pr-3 text-right">Total</th>
             <th className="pb-2 pr-3 text-right">Novos</th>
@@ -714,7 +749,9 @@ function HistoricoTable({ execucoes }: { execucoes: CaptacaoExecucao[] }) {
           </tr>
         </thead>
         <tbody>
-          {execucoes.map((exec) => (
+          {execucoes.map((exec) => {
+            const datas = parseDatas(exec.parametros_json);
+            return (
             <tr key={exec.id} className="border-b last:border-0">
               <td className="py-2 pr-3 whitespace-nowrap">
                 {exec.inicio ? new Date(exec.inicio).toLocaleString("pt-BR", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" }) : "-"}
@@ -726,6 +763,12 @@ function HistoricoTable({ execucoes }: { execucoes: CaptacaoExecucao[] }) {
                     : "bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400"
                 }`}>
                   {exec.fonte === "datajud" ? "DataJud" : exec.fonte === "djen_api" ? "DJEN" : exec.fonte}
+                </span>
+              </td>
+              <td className="py-2 pr-3">
+                <span className="inline-flex items-center gap-1 text-xs text-[var(--muted-foreground)]">
+                  <Calendar className="h-3 w-3" />
+                  {fmtDate(datas.inicio)} → {fmtDate(datas.fim)}
                 </span>
               </td>
               <td className="py-2 pr-3">
@@ -743,7 +786,8 @@ function HistoricoTable({ execucoes }: { execucoes: CaptacaoExecucao[] }) {
                 {exec.duracao_ms ? `${(exec.duracao_ms / 1000).toFixed(1)}s` : "-"}
               </td>
             </tr>
-          ))}
+            );
+          })}
         </tbody>
       </table>
     </div>
@@ -1243,17 +1287,52 @@ function CaptacaoForm({
         </div>
 
         {/* Date range */}
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          <div>
-            <label className={labelClass}>{modalidade === "recorrente" ? "Data de Partida *" : "Data Início *"}</label>
-            <input type="date" value={dataInicio} onChange={(e) => setDataInicio(e.target.value)} className={inputClass} required />
-          </div>
-          {modalidade === "faixa_fixa" && (
-            <div>
-              <label className={labelClass}>Data Fim *</label>
-              <input type="date" value={dataFim} onChange={(e) => setDataFim(e.target.value)} className={inputClass} required />
+        <div className="space-y-2">
+          <label className={labelClass}>Periodo de Busca</label>
+          <div className="rounded-lg border bg-[var(--secondary)]/30 p-3 space-y-3">
+            {modalidade === "recorrente" ? (
+              <p className="text-xs text-[var(--muted-foreground)]">
+                A busca recorrente começa na data de partida e avança automaticamente a cada execução.
+                Se não informar uma data, o sistema busca os últimos 30 dias na primeira execução e depois apenas publicações novas.
+              </p>
+            ) : (
+              <p className="text-xs text-[var(--muted-foreground)]">
+                A busca por faixa fixa consulta apenas o período especificado abaixo, sem avançar automaticamente.
+              </p>
+            )}
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div>
+                <label className="block text-xs font-medium text-[var(--card-foreground)] mb-1">
+                  {modalidade === "recorrente" ? "Data de Partida (opcional)" : "Data Início *"}
+                </label>
+                <input
+                  type="date"
+                  value={dataInicio}
+                  onChange={(e) => setDataInicio(e.target.value)}
+                  className={inputClass}
+                  required={modalidade === "faixa_fixa"}
+                />
+                {modalidade === "recorrente" && !dataInicio && (
+                  <p className="text-[10px] text-amber-600 mt-1">Se vazio, busca últimos 30 dias na 1ª execução</p>
+                )}
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-[var(--card-foreground)] mb-1">
+                  {modalidade === "recorrente" ? "Data Fim (auto = hoje)" : "Data Fim *"}
+                </label>
+                <input
+                  type="date"
+                  value={dataFim}
+                  onChange={(e) => setDataFim(e.target.value)}
+                  className={inputClass}
+                  required={modalidade === "faixa_fixa"}
+                />
+                {modalidade === "recorrente" && !dataFim && (
+                  <p className="text-[10px] text-[var(--muted-foreground)] mt-1">Automaticamente usa a data de hoje</p>
+                )}
+              </div>
             </div>
-          )}
+          </div>
         </div>
 
         {/* Fontes */}
