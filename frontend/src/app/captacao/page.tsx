@@ -108,6 +108,9 @@ export default function CaptacaoPage() {
   // Edit form
   const [editingCaptacao, setEditingCaptacao] = useState<CaptacaoItem | null>(null);
 
+  // View filter: ativas vs canceladas
+  const [showCanceladas, setShowCanceladas] = useState(false);
+
   // Seen tracking (localStorage)
   const [seenCaptacoes, setSeenCaptacoes] = useState<Record<number, number>>(() => {
     if (typeof window === "undefined") return {};
@@ -384,29 +387,78 @@ export default function CaptacaoPage() {
 
       {/* List */}
       <div className="space-y-3">
-        <h2 className="text-lg font-semibold text-[var(--foreground)]">
-          Captacoes Configuradas ({captacoes.length})
-        </h2>
-
-        {captacoes.length === 0 ? (
-          <div className="rounded-lg border bg-[var(--card)] p-12 text-center">
-            <Zap className="mx-auto h-12 w-12 text-[var(--muted-foreground)] mb-4" />
-            <h3 className="text-lg font-medium text-[var(--card-foreground)] mb-2">
-              Nenhuma captacao configurada
-            </h3>
-            <p className="text-sm text-[var(--muted-foreground)] mb-4">
-              Crie uma captacao para monitorar automaticamente publicacoes no DataJud e DJEN.
-            </p>
+        {/* Toggle Ativas / Canceladas */}
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-2">
             <button
-              onClick={() => setShowCreateForm(true)}
-              className="inline-flex items-center gap-2 rounded-lg bg-legal-600 px-4 py-2 text-sm font-medium text-white hover:bg-legal-700"
+              onClick={() => setShowCanceladas(false)}
+              className={`inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-sm font-medium transition-colors ${
+                !showCanceladas
+                  ? "bg-legal-600 text-white"
+                  : "border text-[var(--muted-foreground)] hover:bg-[var(--secondary)]"
+              }`}
             >
-              <Plus className="h-4 w-4" />
-              Criar Captacao
+              <Zap className="h-3.5 w-3.5" />
+              Ativas ({captacoes.filter(c => c.ativo).length})
+            </button>
+            <button
+              onClick={() => setShowCanceladas(true)}
+              className={`inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-sm font-medium transition-colors ${
+                showCanceladas
+                  ? "bg-red-600 text-white"
+                  : "border text-[var(--muted-foreground)] hover:bg-[var(--secondary)]"
+              }`}
+            >
+              <XCircle className="h-3.5 w-3.5" />
+              Canceladas ({captacoes.filter(c => !c.ativo).length})
             </button>
           </div>
-        ) : (
-          captacoes.map((cap) => {
+          <span className="text-xs text-[var(--muted-foreground)]">
+            Total: {captacoes.length} captacoes
+          </span>
+        </div>
+
+        {(() => {
+          const filtered = showCanceladas
+            ? captacoes.filter(c => !c.ativo)
+            : captacoes.filter(c => c.ativo);
+
+          if (filtered.length === 0) {
+            return (
+              <div className="rounded-lg border bg-[var(--card)] p-12 text-center">
+                {showCanceladas ? (
+                  <>
+                    <XCircle className="mx-auto h-12 w-12 text-[var(--muted-foreground)] mb-4" />
+                    <h3 className="text-lg font-medium text-[var(--card-foreground)] mb-2">
+                      Nenhuma captacao cancelada
+                    </h3>
+                    <p className="text-sm text-[var(--muted-foreground)]">
+                      Captacoes desativadas aparecerao aqui para consulta.
+                    </p>
+                  </>
+                ) : (
+                  <>
+                    <Zap className="mx-auto h-12 w-12 text-[var(--muted-foreground)] mb-4" />
+                    <h3 className="text-lg font-medium text-[var(--card-foreground)] mb-2">
+                      Nenhuma captacao ativa
+                    </h3>
+                    <p className="text-sm text-[var(--muted-foreground)] mb-4">
+                      Crie uma captacao para monitorar automaticamente publicacoes no DataJud e DJEN.
+                    </p>
+                    <button
+                      onClick={() => setShowCreateForm(true)}
+                      className="inline-flex items-center gap-2 rounded-lg bg-legal-600 px-4 py-2 text-sm font-medium text-white hover:bg-legal-700"
+                    >
+                      <Plus className="h-4 w-4" />
+                      Criar Captacao
+                    </button>
+                  </>
+                )}
+              </div>
+            );
+          }
+
+          return filtered.map((cap) => {
             const lastSeen = seenCaptacoes[cap.id] || 0;
             const unseenCount = Math.max(0, cap.total_resultados - lastSeen);
             return (
@@ -430,8 +482,8 @@ export default function CaptacaoPage() {
               onEditar={() => setEditingCaptacao(cap)}
             />
             );
-          })
-        )}
+          });
+        })()}
       </div>
     </div>
   );
