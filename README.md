@@ -5,7 +5,7 @@ Sistema de captacao, monitoramento e analise inteligente de publicacoes judiciai
 ## Funcionalidades
 
 ### Backend (FastAPI)
-- **45+ endpoints REST** para busca, monitoramento e analise
+- **120+ endpoints REST** para busca, monitoramento e analise
 - **7 fontes de dados** integradas (DataJud, DJEN, TJSP DJe, DEJT, Querido Diario, JusBrasil, e-SAJ)
 - **14 agentes de IA** organizados em 6 camadas de analise
 - **Pipeline multi-agentes** com paralelismo automatico e resolucao de dependencias
@@ -14,6 +14,10 @@ Sistema de captacao, monitoramento e analise inteligente de publicacoes judiciai
 - **Cache L1/L2** (memoria + SQLite) com TTL e LRU eviction
 - **Autenticacao JWT** com controle de acesso por roles
 - **Busca unificada** em multiplas fontes simultaneamente
+- **Processos Monitorados** com verificação automática DataJud + DJEN (6h)
+- **Diff hash-based** de movimentações (detecta novas reais)
+- **Filtro por fonte** no backend (query ?fonte=)
+- **ESLint** configurado (next/core-web-vitals)
 
 ### Frontend (Next.js 15)
 - **Dashboard** com estatisticas e busca rapida
@@ -22,6 +26,15 @@ Sistema de captacao, monitoramento e analise inteligente de publicacoes judiciai
 - **Monitor** de publicacoes com CRUD completo
 - **Login** com autenticacao JWT
 - **Design responsivo** com Tailwind CSS
+- **Resultados clicáveis** com links para processo em todas as abas
+- **Paginação** "Carregar mais" em todas as listas (captação, monitor, processos, timeline)
+- **Badges de fonte** diferenciados (azul DataJud / âmbar DJEN)
+- **Filtro por fonte** nos resultados (DataJud/DJEN/Todas)
+- **Tracking lidos/não-lidos** via localStorage
+- **Deep links** do Dashboard (?filter=novos, ?filter=recente)
+- **Exportação CSV/JSON** dos processos monitorados
+- **Validação CNJ** no formulário de adicionar processo
+- **Feriados dinâmicos** (cálculo automático de Páscoa)
 
 ### Fontes de Dados
 
@@ -226,6 +239,35 @@ A API DJEN do CNJ requer IP brasileiro. Para acessar de fora do Brasil:
 1. Configure um proxy residencial brasileiro (ex: Bright Data)
 2. Preencha as variaveis `BRIGHT_DATA_*` no `.env`
 3. O sistema usara automaticamente o proxy para requisicoes ao DJEN
+
+
+## Changelog
+
+### v2.1.0 (2026-04-24) — 31 implementações
+- Badges de fonte diferenciados em todas as abas (azul DataJud / âmbar DJEN)
+- Resultados e numero_processo clicáveis com Link para /processo
+- Paginação "Carregar mais" em captação, monitor, processos e timeline
+- Filtro por fonte nos resultados de captação e busca
+- Tracking lidos/não-lidos via localStorage
+- Deep links do Dashboard (?filter=novos, ?filter=recente)
+- Checkboxes de fonte respeitados na busca unificada
+- Feriados BR dinâmicos (não mais hardcoded)
+- DJEN busca por numero_processo exato
+- Publicações DJEN na Análise IA clicáveis e expandíveis
+- Validação CNJ no formulário de adicionar processo
+- Exportação CSV/JSON dos processos monitorados
+- Backend: filtro ?fonte= no endpoint publicações
+- Backend: diff hash-based de movimentações
+- Backend: advogado/parte salvam no banco
+- ESLint configurado com next/core-web-vitals
+
+### v2.0.0 (2026-04-23) — 200 implementações
+- Kanban board, notas, templates, heatmap, score, resumo executivo
+- 14 agentes IA em 6 camadas
+- 7 fontes de dados integradas
+- Pipeline multi-agentes com paralelismo
+- Captação automatizada com scheduler
+- WebSocket para progresso em tempo real
 
 ## Licenca
 

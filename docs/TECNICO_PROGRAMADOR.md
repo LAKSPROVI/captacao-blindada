@@ -1,6 +1,6 @@
 # Documento Tecnico — Captacao Peticao Blindada
 
-> Versao: 2.0.0 | Atualizado: 2026-04-23 | Para: Desenvolvedores e DevOps | 200 implementações | 120 endpoints
+> Versao: 2.1.0 | Atualizado: 2026-04-24 | Para: Desenvolvedores e DevOps | 231 implementações | 120+ endpoints
 
 ---
 
@@ -49,7 +49,7 @@
 | Proxy | Bright Data Residential (BR) | brd.superproxy.io:33335 |
 | Containers | Docker + Docker Compose | v3.8 |
 | Reverse Proxy | Nginx | Em producao |
-| Testes | Pytest (backend) + Playwright (frontend E2E) | >=8.0 / latest |
+| Testes | Pytest (backend, 288/294) + ESLint (frontend) | >=8.0 / next/core-web-vitals |
 
 ---
 
@@ -95,7 +95,7 @@ captacao-blindada/
 │       │   └── captacao_service.py   # Servico de captacao automatizada
 │       ├── config/
 │       │   └── tribunais_dje.json    # Mapeamento de 60+ tribunais
-│       ├── tests/                    # 9 arquivos de testes
+│       ├── tests/                    # 10 arquivos de testes (288 passing)
 │       └── scripts/                  # 6 scripts utilitarios
 ├── frontend/
 │   ├── package.json                  # Dependencias Node.js
@@ -116,17 +116,39 @@ captacao-blindada/
 │       │   ├── busca/page.tsx        # Busca unificada (/busca)
 │       │   ├── monitor/page.tsx      # Monitor (/monitor)
 │       │   └── captacao/page.tsx     # Captacao automatizada (/captacao)
+│       │   ├── configuracao-ia/page.tsx  # Configuração IA (/configuracao-ia)
+│       │   ├── admin/
+│       │   │   ├── usuarios/page.tsx     # Gestão de usuários
+│       │   │   ├── auditoria/page.tsx    # Cadeia de custódia
+│       │   │   ├── tarifacao/page.tsx    # Tarifação
+│       │   │   ├── tenants/page.tsx      # Cadastros/Tenants
+│       │   │   └── erros/page.tsx        # Erros do sistema
 │       ├── components/
 │       │   ├── Sidebar.tsx           # Menu lateral colapsavel
 │       │   ├── LoadingSpinner.tsx     # Spinner de carregamento
 │       │   ├── ProcessoCard.tsx      # Card de processo
 │       │   ├── RiskBadge.tsx         # Badge + Gauge de risco
 │       │   ├── StatsCard.tsx         # Card de estatisticas
-│       │   └── TimelineView.tsx      # Visualizacao de timeline
+│       │   ├── TimelineView.tsx      # Visualizacao de timeline
+│       │   ├── Toast.tsx             # Notificações visuais
+│       │   ├── Skeleton.tsx          # Loading states
+│       │   ├── Modal.tsx             # Modais e confirmações
+│       │   ├── CompactTable.tsx      # Tabela compacta
+│       │   ├── Tooltip.tsx           # Tooltip informativo
+│       │   ├── EmptyState.tsx        # Estado vazio
+│       │   ├── Breadcrumbs.tsx       # Navegação breadcrumb
+│       │   ├── OnlineIndicator.tsx   # Status online
+│       │   └── KeyboardShortcutsHelp.tsx # Atalhos de teclado
+│       ├── hooks/
+│       │   ├── useOnlineStatus.ts    # Detecta online/offline
+│       │   ├── useLocalStorage.ts    # State persistido
+│       │   ├── useKeyboardShortcuts.ts # Atalhos de teclado
+│       │   └── useDebounce.ts        # Debounce de valores
 │       └── lib/
-│           ├── api.ts                # ApiClient singleton (30+ metodos)
+│           ├── api.ts                # ApiClient singleton (50+ metodos)
 │           ├── auth-context.tsx      # React Context de autenticacao
 │           └── utils.ts              # Utilitario cn() (tailwind-merge)
+├── frontend/eslint.config.mjs        # ESLint (next/core-web-vitals)
 ├── docker-compose.yml                # Orquestracao de containers
 ├── Dockerfile.backend                # Build do backend
 ├── Dockerfile.frontend               # Build do frontend
@@ -764,3 +786,68 @@ healthcheck:
 # Timezone
 ENV TZ=America/Sao_Paulo
 ```
+
+---
+
+## Changelog v2.1.0 (2026-04-24)
+
+### Frontend (5 arquivos, +627 linhas)
+
+**captacao/page.tsx:**
+- Badges de fonte diferenciados (azul DataJud / âmbar DJEN) no histórico e resultados
+- Resultados expandíveis com detalhes (classe, órgão, advogados, partes, OABs)
+- numero_processo clicável com Link para /processo?q=...
+- Filtro por fonte (DataJud/DJEN/Todas) com useMemo
+- Paginação "Carregar mais 20"
+- Tracking lidos/não-lidos via localStorage com badge pulsante
+- Suporte a ?filter=novos com auto-expand
+
+**monitor/page.tsx:**
+- Paginação "Carregar mais 30"
+- Processo clicável no PubCard → Link para /processo?q=...
+- Botão "Ver Processo Completo" no card expandido
+- Feriados BR dinâmicos (calcularPascoa + gerarFeriadosBR)
+- Monitor carrega apenas DJEN via backend (filtro ?fonte=djen_api,djen)
+
+**busca/page.tsx:**
+- Resultados da busca pontual com processo clicável
+- Resultados do histórico com processo clicável
+- Checkboxes de fonte respeitados (DataJud-only, DJEN-only, ou ambos)
+- Contagem por fonte nos resultados (badges azul/âmbar)
+- handleSalvarComoCaptacao auto-detecta tipo (processo/OAB/nome_parte)
+
+**processo/page.tsx:**
+- Paginação na tabela de processos monitorados ("Carregar mais 30")
+- Paginação na Timeline Unificada ("Carregar mais 30")
+- Suporte a ?filter=recente vindo do Dashboard
+- DJEN busca por numero_processo exato (api.buscarDJEN em vez de buscarLocal)
+- Publicações DJEN na Análise IA clicáveis e expandíveis
+- Indicador visual para itens sem data na timeline (AlertTriangle)
+- Validação CNJ no formulário de adicionar processo
+- Exportação CSV/JSON dos processos monitorados
+
+**page.tsx (Dashboard):**
+- Insight de captação linka para /captacao?filter=novos
+
+**eslint.config.mjs:**
+- ESLint configurado com next/core-web-vitals + regras customizadas
+
+### Backend (3 arquivos, +71 linhas)
+
+**app.py:**
+- Diff hash-based de movimentações (detecta novas reais via hash comparison)
+- Detalhes no histórico incluem data/nome das novas movimentações
+- novas_movimentacoes calculadas corretamente (não mais hardcoded 0)
+
+**database.py:**
+- Filtro ?fonte= no endpoint publicações (IN query para múltiplos valores)
+
+**djen_router.py:**
+- Endpoint /advogado/{nome} agora salva resultados no banco + registra busca
+- Endpoint /parte/{nome} agora salva resultados no banco + registra busca
+
+### Testes
+- Backend pytest: 288/294 passed (6 falhas pré-existentes em test_auth.py)
+- Frontend TypeScript: 0 erros
+- ESLint: apenas warnings (imports não usados)
+- 100 testes em produção: 89 passed, 11 falsos positivos (auth desabilitado em dev)

@@ -1,6 +1,6 @@
 # Mapeamento do Sistema — Captacao Peticao Blindada
 
-> Versao: 2.0.0 | Atualizado: 2026-04-23 | Para: Equipe tecnica e gestao | 200 implementações | 120 endpoints
+> Versao: 2.1.0 | Atualizado: 2026-04-24 | Para: Equipe tecnica e gestao | 231 implementações | 120+ endpoints
 
 ---
 
@@ -60,7 +60,7 @@
 | Container | Node 20 Alpine, porta 8010 |
 | Build mode | Standalone (next build → standalone output) |
 
-#### Paginas (7 rotas)
+#### Paginas (15 rotas)
 
 | Rota | Arquivo | Funcao |
 |------|---------|--------|
@@ -71,8 +71,16 @@
 | `/busca` | `app/busca/page.tsx` | Busca unificada em multiplas fontes |
 | `/monitor` | `app/monitor/page.tsx` | Monitoramento de processos/OABs |
 | `/captacao` | `app/captacao/page.tsx` | Captacao automatizada de publicacoes |
+| `/captacao?filter=novos` | `app/captacao/page.tsx` | Auto-expande captação com novos resultados |
+| `/processo?filter=recente` | `app/processo/page.tsx` | Filtra processos com movimentações recentes |
+| `/processo?q={termo}` | `app/processo/page.tsx` | Busca direta por processo |
+| `/configuracao-ia` | `app/configuracao-ia/page.tsx` | Configuração de modelos IA |
+| `/admin/usuarios` | `app/admin/usuarios/page.tsx` | Gestão de usuários |
+| `/admin/auditoria` | `app/admin/auditoria/page.tsx` | Cadeia de custódia |
+| `/admin/tarifacao` | `app/admin/tarifacao/page.tsx` | Tarifação do sistema |
+| `/admin/erros` | `app/admin/erros/page.tsx` | Erros do sistema |
 
-#### Componentes (6)
+#### Componentes (16)
 
 | Componente | Arquivo | Funcao |
 |------------|---------|--------|
@@ -82,14 +90,32 @@
 | `RiskBadge` + `RiskGauge` | `components/RiskBadge.tsx` | Badge e gauge visual de risco (0-100) |
 | `StatsCard` | `components/StatsCard.tsx` | Card de estatistica com icone e tendencia |
 | `TimelineView` | `components/TimelineView.tsx` | Linha do tempo de movimentacoes |
+| `Breadcrumbs` | `components/Breadcrumbs.tsx` | Navegação breadcrumb |
+| `Toast` | `components/Toast.tsx` | Notificações visuais (success/error/warning/info) |
+| `Skeleton` | `components/Skeleton.tsx` | Loading states (text/card/table/circle) |
+| `Modal` | `components/Modal.tsx` | Modais e confirmações |
+| `CompactTable` | `components/CompactTable.tsx` | Tabela compacta reutilizável |
+| `Tooltip` | `components/Tooltip.tsx` | Tooltip informativo |
+| `EmptyState` | `components/EmptyState.tsx` | Estado vazio com ação |
+| `OnlineIndicator` | `components/OnlineIndicator.tsx` | Indicador de status online |
+| `KeyboardShortcutsHelp` | `components/KeyboardShortcutsHelp.tsx` | Ajuda de atalhos |
 
 #### Bibliotecas (lib/)
 
 | Arquivo | Funcao |
 |---------|--------|
-| `api.ts` | ApiClient singleton com 30+ metodos e 20+ interfaces |
+| `api.ts` | ApiClient singleton com 50+ metodos e 30+ interfaces |
 | `auth-context.tsx` | React Context para autenticacao (login, logout, user, token) |
 | `utils.ts` | Utilitario `cn()` (clsx + tailwind-merge) |
+
+#### Hooks (4)
+
+| Hook | Arquivo | Funcao |
+|------|---------|--------|
+| `useOnlineStatus` | `hooks/useOnlineStatus.ts` | Detecta status online/offline |
+| `useLocalStorage` | `hooks/useLocalStorage.ts` | State persistido em localStorage |
+| `useKeyboardShortcuts` | `hooks/useKeyboardShortcuts.ts` | Atalhos de teclado |
+| `useDebounce` | `hooks/useDebounce.ts` | Debounce de valores |
 
 ---
 
@@ -101,7 +127,7 @@
 | Linguagem | Python 3.12 |
 | Container | python:3.12-slim, porta 8001, user non-root |
 | Banco | SQLite com WAL mode |
-| Scheduler | APScheduler (2 jobs periodicos) |
+| Scheduler | APScheduler (3 jobs: Monitor DJEN 10min, DataJud 6h, Captação 30min) |
 
 #### Endpoints (45+ total, 6 routers)
 
@@ -274,6 +300,46 @@ A inicialização de tabelas e do administrador padrão ocorre no evento `lifesp
                            em publicacoes e
                            execucoes_captacao)
 ```
+
+#### `processos_monitorados` — Processos monitorados para verificação automática
+| Coluna | Tipo | Restricao | Descricao |
+|--------|------|-----------|-----------|
+| id | INTEGER | PK AUTOINCREMENT | ID unico |
+| numero_processo | TEXT | UNIQUE NOT NULL | Numero CNJ |
+| tribunal | TEXT | — | Tribunal |
+| classe_processual | TEXT | — | Classe processual |
+| orgao_julgador | TEXT | — | Orgao julgador |
+| assuntos | TEXT | — | Assuntos (JSON) |
+| status | TEXT | DEFAULT 'ativo' | ativo/inativo |
+| origem | TEXT | DEFAULT 'monitor' | Origem do registro |
+| origem_id | INTEGER | — | ID da origem |
+| ultima_verificacao | TEXT | — | Ultima verificação DataJud |
+| total_movimentacoes | INTEGER | DEFAULT 0 | Total de movimentações |
+| movimentacoes | TEXT | — | Movimentações (JSON blob) |
+| data_ultima_movimentacao | TEXT | — | Data da última movimentação |
+| criado_em | TIMESTAMP | DEFAULT NOW | Criação |
+| atualizado_em | TIMESTAMP | DEFAULT NOW | Atualização |
+
+#### `processos_monitorados_historico` — Histórico de verificações
+| Coluna | Tipo | Restricao | Descricao |
+|--------|------|-----------|-----------|
+| id | INTEGER | PK AUTOINCREMENT | ID unico |
+| numero_processo | TEXT | FK | Numero do processo |
+| data_verificacao | TIMESTAMP | DEFAULT NOW | Data da verificação |
+| status | TEXT | — | ok/erro/sem_mudancas |
+| fonte | TEXT | — | datajud/djen |
+| detalhes | TEXT | — | Detalhes (JSON) |
+| total_movimentacoes | INTEGER | — | Total de movimentações |
+| novas_movimentacoes | INTEGER | DEFAULT 0 | Novas movimentações detectadas |
+
+#### `processo_anotacoes` — Anotações em processos
+| Coluna | Tipo | Restricao | Descricao |
+|--------|------|-----------|-----------|
+| id | INTEGER | PK AUTOINCREMENT | ID unico |
+| numero_processo | TEXT | NOT NULL | Numero do processo |
+| texto | TEXT | NOT NULL | Texto da anotação |
+| tipo | TEXT | DEFAULT 'nota' | Tipo da anotação |
+| criado_em | TIMESTAMP | DEFAULT NOW | Criação |
 
 ---
 
@@ -921,3 +987,37 @@ captacao-blindada/
 | useLocalStorage | hooks/useLocalStorage.ts | Estado persistido em localStorage |
 | useOnlineStatus | hooks/useOnlineStatus.ts | Status de conexão |
 | useKeyboardShortcuts | hooks/useKeyboardShortcuts.ts | Atalhos de teclado |
+
+---
+
+## Melhorias v2.1.0 (2026-04-24) — 31 implementações
+
+### Frontend — UX Melhorada
+
+| Melhoria | Arquivo | Descrição |
+|----------|---------|-----------|
+| Badges de fonte diferenciados | captacao, monitor, busca | Azul para DataJud, âmbar para DJEN em todos os pontos |
+| Resultados clicáveis | captacao, monitor, busca | numero_processo é Link para /processo?q=... |
+| Cards expandíveis | captacao, monitor, processo | Clique para ver detalhes completos |
+| Paginação "Carregar mais" | captacao (20), monitor (30), processos (30), timeline (30) | Evita renderizar centenas de itens |
+| Filtro por fonte | captacao, busca | Botões DataJud/DJEN/Todas com contagem |
+| Tracking lidos/não-lidos | captacao, processo | localStorage com badge pulsante |
+| Deep links do Dashboard | captacao?filter=novos, processo?filter=recente | Navegação direta para resultados relevantes |
+| Validação CNJ | processo | Regex no formulário de adicionar processo |
+| Exportação CSV/JSON | processo | Download client-side dos processos monitorados |
+| Feriados dinâmicos | monitor | Cálculo automático de Páscoa + feriados móveis |
+| Checkboxes de fonte | busca | DataJud/DJEN respeitados na busca unificada |
+| Contagem por fonte | busca | Badges com total por fonte nos resultados |
+| DJEN expandível na Análise | processo | Cards DJEN clicáveis e expandíveis |
+| Indicador data indisponível | processo | Badge âmbar com AlertTriangle na timeline |
+| ESLint configurado | frontend | next/core-web-vitals + regras customizadas |
+
+### Backend — Melhorias
+
+| Melhoria | Arquivo | Descrição |
+|----------|---------|-----------|
+| Filtro ?fonte= | database.py | Endpoint publicações aceita filtro por fonte (IN query) |
+| Diff hash movimentações | app.py | Detecta movimentações realmente novas via hash comparison |
+| Advogado/parte salvam no banco | djen_router.py | Endpoints /advogado e /parte agora persistem resultados |
+| novas_movimentacoes corretas | app.py | Cálculo real em vez de hardcoded 0 |
+| Detalhes no histórico | app.py | Inclui data/nome das novas movimentações |                                       

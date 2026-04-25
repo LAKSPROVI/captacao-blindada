@@ -1,6 +1,6 @@
 # Guia do Usuario — Captacao Peticao Blindada
 
-> Versao: 2.0.0 | Atualizado: 2026-04-23 | Para: Usuarios finais (advogados, equipe juridica) | 200 implementações
+> Versao: 2.1.0 | Atualizado: 2026-04-24 | Para: Usuarios finais (advogados, equipe juridica) | 231 implementações
 
 ---
 
@@ -58,6 +58,12 @@ Apos o login, voce e direcionado ao **Painel**, que oferece uma visao geral do s
    - Publicacoes encontradas
    - Status geral do sistema
 3. **Processos recentes** — Lista dos ultimos 6 processos analisados com seus detalhes
+
+### Links inteligentes
+
+Os cards do Dashboard agora levam diretamente para os resultados relevantes:
+- **"Novos resultados de captação"** → abre a aba Captação já filtrada nos novos resultados
+- **"Movimentações recentes"** → abre Processos já filtrado por movimentações recentes
 
 ### Navegacao
 
@@ -128,6 +134,32 @@ Apos a analise, o sistema exibe abas com diferentes visoes:
 
 Abaixo do formulario de analise, o sistema exibe uma lista dos **ultimos processos analisados**. Clique em qualquer card para ver os detalhes completos.
 
+### Processos Monitorados (novidade v2.1)
+
+Além da análise com IA, a aba Processos agora inclui o modo **Processos Monitorados**:
+
+#### O que é?
+O sistema verifica automaticamente (a cada 6 horas) se há novas movimentações nos processos que você está acompanhando, consultando tanto o DataJud quanto o DJEN.
+
+#### Timeline Unificada
+- Ao clicar em um processo monitorado, uma **timeline unificada** mostra todas as movimentações
+- Itens do **DataJud** aparecem em azul, itens do **DJEN** em âmbar
+- Itens sem data mostram um indicador visual "Data indisponível"
+- Paginação: carrega 30 eventos por vez
+
+#### Exportação
+- Botões **CSV** e **JSON** permitem exportar a lista de processos monitorados
+- O CSV inclui: processo, tribunal, classe, movimentações, última movimentação, status
+
+#### Validação CNJ
+- Ao adicionar um processo, o sistema valida o formato CNJ em tempo real
+- Formato esperado: `0000000-00.0000.0.00.0000` (20 dígitos)
+
+#### Filtros
+- Filtrar por tribunal, status, movimentações (com/sem/recentes/novas)
+- 10 opções de ordenação
+- Link direto do Dashboard: "Movimentações recentes" já abre filtrado
+
 ---
 
 ## 5. Busca Unificada
@@ -170,6 +202,26 @@ Cada resultado exibe:
 - **Movimentacoes** — quando disponiveis, lista de movimentos
 
 Clique em qualquer resultado para expandir e ver todos os detalhes.
+
+### Novidades da versão 2.1
+
+#### Seleção de fontes
+- Os checkboxes **DataJud** e **DJEN** agora são respeitados na busca
+- Desmarque uma fonte para buscar apenas na outra
+- Se ambas estiverem marcadas, a busca unificada é usada
+
+#### Resultados clicáveis
+- O número do processo em cada resultado é um **link clicável**
+- Clique para ir direto à análise do processo
+
+#### Contagem por fonte
+- Os resultados mostram badges com a contagem por fonte (ex: "DataJud: 5" / "DJEN: 3")
+
+#### Salvar como captação inteligente
+- Ao salvar uma pesquisa como captação, o sistema **detecta automaticamente** o tipo:
+  - Formato CNJ → tipo "processo"
+  - Formato OAB (123456/SP) → tipo "oab"
+  - Texto livre → tipo "nome_parte"
 
 ---
 
@@ -222,6 +274,21 @@ O Monitor exibe cards com resumo:
 - Monitorados ativos
 - Total de publicacoes encontradas
 - Status de saude do sistema
+
+### Novidades da versão 2.1
+
+#### Processo clicável
+- O número do processo em cada publicação agora é um **link clicável**
+- Clique para ir direto à página de análise do processo
+
+#### Botão "Ver Processo Completo"
+- Ao expandir uma publicação, um botão azul **"Ver Processo Completo"** aparece no final
+- Clique para navegar à análise completa do processo
+
+#### Paginação
+- Publicações são carregadas em blocos de 30
+- Clique em **"Carregar mais 30"** para ver mais publicações
+- Evita lentidão quando há centenas de publicações
 
 ---
 
@@ -320,6 +387,30 @@ Clique em uma captacao para expandir e ver dois paineis:
 #### Aba "Resultados"
 - Publicacoes encontradas por esta captacao
 - Cada resultado mostra: fonte, tribunal, data, conteudo
+
+### Novidades da versão 2.1
+
+#### Badges de fonte
+Cada resultado agora mostra claramente de qual fonte veio:
+- **Azul** = DataJud (metadados processuais)
+- **Âmbar** = DJEN (texto de publicações)
+
+#### Resultados clicáveis
+- Clique no **número do processo** em qualquer resultado para ir direto à página de análise
+- Clique em um resultado para **expandir** e ver detalhes completos (classe, órgão, advogados, partes, OABs)
+- Botão **"Ver Processo Completo"** no resultado expandido
+
+#### Filtro por fonte
+- Botões **DataJud / DJEN / Todas** acima dos resultados
+- Cada botão mostra a contagem de resultados daquela fonte
+
+#### Indicador de novos
+- Badge vermelho pulsante mostra quantos resultados você ainda não viu
+- Ao clicar em uma captação, os resultados são marcados como "vistos"
+
+#### Paginação
+- Resultados são carregados em blocos de 20
+- Clique em **"Carregar mais 20"** para ver mais resultados
 
 ---
 
