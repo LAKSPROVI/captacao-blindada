@@ -84,7 +84,6 @@ services:
       - captacao-net
     security_opt:
       - no-new-privileges:true
-    read_only: true
     tmpfs:
       - /tmp
     mem_limit: 512m
