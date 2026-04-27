@@ -11,7 +11,6 @@ import {
   PublicacaoItem,
 } from "@/lib/api";
 import { LoadingSpinner } from "@/components/LoadingSpinner";
-import { StatsCard } from "@/components/StatsCard";
 import {
   Zap,
   Plus,
@@ -38,6 +37,11 @@ import {
   Filter,
   Globe,
   Database,
+  Download,
+  PlayCircle,
+  BarChart3,
+  TrendingUp,
+  ArrowUpRight,
 } from "lucide-react";
 import Link from "next/link";
 
@@ -89,7 +93,25 @@ export default function CaptacaoPage() {
   const [stats, setStats] = useState<CaptacaoStats | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState("");
+
+  // Guide visibility (initialized false to avoid SSR hydration mismatch)
+  const [showGuide, setShowGuide] = useState(false);
+  useEffect(() => {
+    if (localStorage.getItem("captacao_guide_dismissed") !== "true") {
+      setShowGuide(true);
+    }
+  }, []);
+  const dismissGuide = () => {
+    setShowGuide(false);
+    localStorage.setItem("captacao_guide_dismissed", "true");
+  };
   const [success, setSuccess] = useState("");
+  useEffect(() => {
+    if (success) {
+      const timer = setTimeout(() => setSuccess(""), 5000);
+      return () => clearTimeout(timer);
+    }
+  }, [success]);
 
   // Create form
   const [showCreateForm, setShowCreateForm] = useState(false);
@@ -98,8 +120,9 @@ export default function CaptacaoPage() {
   // Detail panel
   const [expandedId, setExpandedId] = useState<number | null>(null);
   const [detailTab, setDetailTab] = useState<"historico" | "resultados">("historico");
-  const [historico, setHistorico] = useState<CaptacaoExecucao[]>([]);
-  const [resultados, setResultados] = useState<PublicacaoItem[]>([]);
+  const [detailCache, setDetailCache] = useState<Record<number, { historico: CaptacaoExecucao[]; resultados: PublicacaoItem[] }>>({});
+  const historico = expandedId ? (detailCache[expandedId]?.historico ?? []) : [];
+  const resultados = expandedId ? (detailCache[expandedId]?.resultados ?? []) : [];
   const [isLoadingDetail, setIsLoadingDetail] = useState(false);
 
   // Executing
@@ -111,13 +134,28 @@ export default function CaptacaoPage() {
   // View filter: ativas vs canceladas
   const [showCanceladas, setShowCanceladas] = useState(false);
 
-  // Seen tracking (localStorage)
-  const [seenCaptacoes, setSeenCaptacoes] = useState<Record<number, number>>(() => {
-    if (typeof window === "undefined") return {};
+  // Search & filter
+  const [searchText, setSearchText] = useState("");
+  const [filterTipo, setFilterTipo] = useState<string>("todos");
+  const [filterPrioridade, setFilterPrioridade] = useState<string>("todos");
+
+  // Executar todas
+  const [executingAll, setExecutingAll] = useState(false);
+
+  // Seen tracking (localStorage) — initialized empty to avoid SSR hydration mismatch
+  const [seenCaptacoes, setSeenCaptacoes] = useState<Record<number, number>>({});
+
+  useEffect(() => {
     try {
-      return JSON.parse(localStorage.getItem("captacao_seen_results") || "{}");
-    } catch { return {}; }
-  });
+      const stored = localStorage.getItem("captacao_seen_results");
+      if (stored) {
+        const parsed = JSON.parse(stored);
+        if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
+          setSeenCaptacoes(parsed);
+        }
+      }
+    } catch { /* ignore */ }
+  }, []);
 
   const markSeen = useCallback((id: number, total: number) => {
     setSeenCaptacoes(prev => {
@@ -155,8 +193,11 @@ export default function CaptacaoPage() {
                 api.historicoCaptacao(comNovos.id, { limite: 500 }),
                 api.resultadosCaptacao(comNovos.id, { limite: 500 }),
               ]);
-              if (hist.status === "fulfilled") setHistorico(hist.value.execucoes || []);
-              if (res.status === "fulfilled") setResultados(res.value.publicacoes || []);
+              if (hist.status === "fulfilled" || res.status === "fulfilled") {
+                const historico = hist.status === "fulfilled" ? hist.value.execucoes || [] : [];
+                const resultados = res.status === "fulfilled" ? res.value.publicacoes || [] : [];
+                setDetailCache(prev => ({ ...prev, [comNovos.id]: { historico, resultados } }));
+              }
             } finally {
               setIsLoadingDetail(false);
             }
@@ -185,8 +226,9 @@ export default function CaptacaoPage() {
         api.historicoCaptacao(id, { limite: 500 }),
         api.resultadosCaptacao(id, { limite: 500 }),
       ]);
-      if (hist.status === "fulfilled") setHistorico(hist.value.execucoes || []);
-      if (res.status === "fulfilled") setResultados(res.value.publicacoes || []);
+      const historico = hist.status === "fulfilled" ? hist.value.execucoes || [] : [];
+      const resultados = res.status === "fulfilled" ? res.value.publicacoes || [] : [];
+      setDetailCache(prev => ({ ...prev, [id]: { historico, resultados } }));
     } catch (err) {
       console.error("Erro ao carregar detalhes:", err);
     } finally {
@@ -259,6 +301,71 @@ export default function CaptacaoPage() {
     }
   };
 
+  const handleExecutarTodas = async () => {
+    if (!confirm("Executar todas as captações ativas agora?")) return;
+    setExecutingAll(true);
+    setError("");
+    setSuccess("");
+    try {
+      const results = await api.executarTodasCaptacoes();
+      const totalNovos = Array.isArray(results) ? results.reduce((sum: number, r: { novos_resultados?: number }) => sum + (r.novos_resultados || 0), 0) : 0;
+      setSuccess(`Todas as captações executadas. ${totalNovos} novo(s) resultado(s) encontrado(s).`);
+      loadData();
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : "Erro desconhecido";
+      setError(`Erro ao executar todas: ${msg}`);
+    } finally {
+      setExecutingAll(false);
+    }
+  };
+
+  const handleExportCsv = async (id: number) => {
+    try {
+      await api.exportarCaptacaoCsv(id);
+    } catch {
+      setError("Erro ao exportar CSV");
+    }
+  };
+
+  const handleExportJson = async (id: number) => {
+    try {
+      await api.exportarCaptacaoJson(id);
+    } catch {
+      setError("Erro ao exportar JSON");
+    }
+  };
+
+  // Filtered captações with search and filters
+  const filteredCaptacoes = useMemo(() => {
+    let list = showCanceladas ? captacoes.filter(c => !c.ativo) : captacoes.filter(c => c.ativo);
+    if (searchText.trim()) {
+      const q = searchText.toLowerCase();
+      list = list.filter(c =>
+        c.nome?.toLowerCase().includes(q) ||
+        c.numero_processo?.toLowerCase().includes(q) ||
+        c.numero_oab?.toLowerCase().includes(q) ||
+        c.nome_parte?.toLowerCase().includes(q) ||
+        c.nome_advogado?.toLowerCase().includes(q) ||
+        c.tribunal?.toLowerCase().includes(q) ||
+        c.descricao?.toLowerCase().includes(q)
+      );
+    }
+    if (filterTipo !== "todos") list = list.filter(c => c.tipo_busca === filterTipo);
+    if (filterPrioridade !== "todos") list = list.filter(c => c.prioridade === filterPrioridade);
+    return list;
+  }, [captacoes, showCanceladas, searchText, filterTipo, filterPrioridade]);
+
+  // Computed stats from historico for detail panel
+  const historicoStats = useMemo(() => {
+    if (historico.length === 0) return null;
+    const completed = historico.filter(e => e.status === "completed").length;
+    const failed = historico.filter(e => e.status === "failed").length;
+    const totalResultados = historico.reduce((s, e) => s + (e.total_resultados || 0), 0);
+    const totalNovos = historico.reduce((s, e) => s + (e.novos_resultados || 0), 0);
+    const avgDuration = historico.filter(e => e.duracao_ms).reduce((s, e) => s + (e.duracao_ms || 0), 0) / Math.max(1, historico.filter(e => e.duracao_ms).length);
+    return { completed, failed, total: historico.length, totalResultados, totalNovos, avgDuration, successRate: Math.round((completed / historico.length) * 100) };
+  }, [historico]);
+
   const handleToggleExpand = (id: number) => {
     if (expandedId === id) {
       setExpandedId(null);
@@ -314,6 +421,126 @@ export default function CaptacaoPage() {
         </div>
       </div>
 
+      {/* Guia Explicativo */}
+      {showGuide && (
+        <div className="rounded-lg border border-legal-600/20 bg-legal-600/5 dark:bg-legal-600/10 shadow-sm overflow-hidden">
+          <div className="flex items-center justify-between px-5 py-3 border-b border-legal-600/10">
+            <h2 className="text-sm font-semibold text-legal-700 dark:text-legal-400 flex items-center gap-2">
+              <AlertCircle className="h-4 w-4" />
+              Como funciona a Captacao Automatizada?
+            </h2>
+            <button
+              onClick={dismissGuide}
+              className="text-xs text-[var(--muted-foreground)] hover:text-[var(--foreground)] transition-colors"
+            >
+              Fechar e nao mostrar novamente
+            </button>
+          </div>
+          <div className="px-5 py-4 space-y-4 text-sm text-[var(--card-foreground)]">
+            <p className="text-[var(--muted-foreground)]">
+              A Captacao Automatizada permite que voce configure buscas recorrentes nas bases do <span className="font-semibold text-blue-600">DataJud</span> (CNJ) e do <span className="font-semibold text-amber-600">DJEN</span> (Diario da Justica Eletronico Nacional). O sistema executa essas buscas automaticamente nos horarios e intervalos que voce definir, encontrando novas publicacoes e movimentacoes sem que voce precise fazer nada manualmente.
+            </p>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div className="rounded-lg border bg-[var(--card)] p-4 space-y-2">
+                <h3 className="font-semibold text-[var(--card-foreground)] flex items-center gap-1.5">
+                  <Plus className="h-4 w-4 text-legal-600" /> 1. Criar uma Captacao
+                </h3>
+                <p className="text-xs text-[var(--muted-foreground)]">
+                  Clique em <span className="font-semibold">"Nova Captacao"</span> e preencha os dados. Voce pode buscar por:
+                </p>
+                <ul className="text-xs text-[var(--muted-foreground)] space-y-1 ml-4 list-disc">
+                  <li><span className="font-medium text-[var(--card-foreground)]">Numero do processo</span> — monitora um processo especifico pelo CNJ</li>
+                  <li><span className="font-medium text-[var(--card-foreground)]">OAB</span> — encontra todas as publicacoes de um advogado</li>
+                  <li><span className="font-medium text-[var(--card-foreground)]">Nome da parte</span> — busca por nome de autor, reu ou interessado</li>
+                  <li><span className="font-medium text-[var(--card-foreground)]">Nome do advogado</span> — busca por nome completo do advogado</li>
+                  <li><span className="font-medium text-[var(--card-foreground)]">Classe processual</span> — filtra por tipo de acao (ex: execucao fiscal)</li>
+                  <li><span className="font-medium text-[var(--card-foreground)]">Assunto</span> — filtra por assunto processual (codigo CNJ)</li>
+                  <li><span className="font-medium text-[var(--card-foreground)]">Varredura geral</span> — varre todas as publicacoes de um tribunal</li>
+                </ul>
+              </div>
+
+              <div className="rounded-lg border bg-[var(--card)] p-4 space-y-2">
+                <h3 className="font-semibold text-[var(--card-foreground)] flex items-center gap-1.5">
+                  <Clock className="h-4 w-4 text-blue-600" /> 2. Configurar o Agendamento
+                </h3>
+                <p className="text-xs text-[var(--muted-foreground)]">
+                  Defina quando e com que frequencia o sistema deve buscar:
+                </p>
+                <ul className="text-xs text-[var(--muted-foreground)] space-y-1 ml-4 list-disc">
+                  <li><span className="font-medium text-[var(--card-foreground)]">Intervalo</span> — de 15 minutos ate 24 horas entre cada busca</li>
+                  <li><span className="font-medium text-[var(--card-foreground)]">Horario</span> — janela de funcionamento (ex: 06:00 as 23:00)</li>
+                  <li><span className="font-medium text-[var(--card-foreground)]">Dias da semana</span> — escolha quais dias o sistema deve rodar</li>
+                  <li><span className="font-medium text-[var(--card-foreground)]">Fontes</span> — DataJud, DJEN ou ambas simultaneamente</li>
+                  <li><span className="font-medium text-[var(--card-foreground)]">Prioridade</span> — urgente, normal ou baixa (afeta a ordem de execucao)</li>
+                </ul>
+              </div>
+
+              <div className="rounded-lg border bg-[var(--card)] p-4 space-y-2">
+                <h3 className="font-semibold text-[var(--card-foreground)] flex items-center gap-1.5">
+                  <RefreshCw className="h-4 w-4 text-green-600" /> 3. Modalidades de Busca
+                </h3>
+                <ul className="text-xs text-[var(--muted-foreground)] space-y-2 ml-0">
+                  <li>
+                    <span className="font-semibold text-legal-600">Busca Recorrente:</span> O sistema busca automaticamente a partir de uma data inicial e avanca a cada execucao. Ideal para monitoramento continuo — nunca perde uma publicacao nova.
+                  </li>
+                  <li>
+                    <span className="font-semibold text-amber-600">Faixa Fixa:</span> Busca uma unica vez dentro de um periodo especifico (ex: 01/01 a 31/03). Ideal para levantamentos historicos ou auditorias pontuais.
+                  </li>
+                </ul>
+              </div>
+
+              <div className="rounded-lg border bg-[var(--card)] p-4 space-y-2">
+                <h3 className="font-semibold text-[var(--card-foreground)] flex items-center gap-1.5">
+                  <Eye className="h-4 w-4 text-purple-600" /> 4. Acompanhar Resultados
+                </h3>
+                <p className="text-xs text-[var(--muted-foreground)]">
+                  Clique em qualquer captacao para expandir e ver:
+                </p>
+                <ul className="text-xs text-[var(--muted-foreground)] space-y-1 ml-4 list-disc">
+                  <li><span className="font-medium text-[var(--card-foreground)]">Historico de execucoes</span> — quando rodou, quantos resultados, se houve erros</li>
+                  <li><span className="font-medium text-[var(--card-foreground)]">Publicacoes encontradas</span> — lista completa com conteudo, partes, advogados e OABs</li>
+                  <li><span className="font-medium text-[var(--card-foreground)]">Badge "nao vistos"</span> — indica quantos resultados novos voce ainda nao conferiu</li>
+                </ul>
+              </div>
+            </div>
+
+            <div className="rounded-lg border bg-[var(--secondary)]/30 p-3 space-y-2">
+              <h3 className="font-semibold text-[var(--card-foreground)] text-xs flex items-center gap-1.5">
+                <Zap className="h-3.5 w-3.5 text-amber-500" /> Acoes Rapidas
+              </h3>
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-3 text-xs text-[var(--muted-foreground)]">
+                <div className="flex items-start gap-1.5">
+                  <Play className="h-3.5 w-3.5 text-green-600 mt-0.5 shrink-0" />
+                  <span><span className="font-medium text-[var(--card-foreground)]">Executar</span> — roda a busca imediatamente, sem esperar o proximo agendamento</span>
+                </div>
+                <div className="flex items-start gap-1.5">
+                  <Pause className="h-3.5 w-3.5 text-yellow-600 mt-0.5 shrink-0" />
+                  <span><span className="font-medium text-[var(--card-foreground)]">Pausar/Retomar</span> — suspende temporariamente sem perder configuracoes</span>
+                </div>
+                <div className="flex items-start gap-1.5">
+                  <Copy className="h-3.5 w-3.5 text-blue-600 mt-0.5 shrink-0" />
+                  <span><span className="font-medium text-[var(--card-foreground)]">Clonar</span> — duplica a captacao para criar uma variacao rapidamente</span>
+                </div>
+                <div className="flex items-start gap-1.5">
+                  <Edit2 className="h-3.5 w-3.5 text-blue-600 mt-0.5 shrink-0" />
+                  <span><span className="font-medium text-[var(--card-foreground)]">Editar</span> — altera parametros, fontes, intervalo ou periodo de busca</span>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+      {!showGuide && (
+        <button
+          onClick={() => setShowGuide(true)}
+          className="inline-flex items-center gap-1.5 text-xs text-legal-600 hover:text-legal-700 transition-colors"
+        >
+          <AlertCircle className="h-3.5 w-3.5" />
+          Como funciona esta aba?
+        </button>
+      )}
+
       {/* Messages */}
       {error && (
         <div className="rounded-lg border border-red-300 bg-red-50 dark:bg-red-900/20 p-3 text-sm text-red-700 dark:text-red-400 flex items-center gap-2">
@@ -330,34 +557,138 @@ export default function CaptacaoPage() {
         </div>
       )}
 
-      {/* Stats */}
+      {/* Stats - Clickable Cards */}
       {stats && (
-        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
-          <StatsCard
-            title="Captacoes Ativas"
-            value={stats.captacoes_ativas}
-            icon={Zap}
-            description={`${stats.total_captacoes} total`}
-          />
-          <StatsCard
-            title="Execucoes Hoje"
-            value={stats.execucoes_hoje}
-            icon={Activity}
-            description={`${stats.total_execucoes} total`}
-          />
-          <StatsCard
-            title="Novos Encontrados"
-            value={stats.total_novos_encontrados}
-            icon={FileText}
-            description="Publicacoes novas"
-          />
-          <StatsCard
-            title="Ultima Execucao"
-            value={stats.ultima_execucao ? new Date(stats.ultima_execucao).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" }) : "--:--"}
-            icon={Clock}
-            description={stats.ultima_execucao ? new Date(stats.ultima_execucao).toLocaleDateString("pt-BR") : "Nenhuma"}
-          />
-        </div>
+        <>
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+            <div
+              onClick={() => { setShowCanceladas(false); setFilterTipo("todos"); setFilterPrioridade("todos"); setSearchText(""); }}
+              className="rounded-lg border bg-[var(--card)] p-6 shadow-sm transition-all hover:shadow-md hover:border-legal-600/30 cursor-pointer group"
+            >
+              <div className="flex items-center justify-between">
+                <div className="space-y-1">
+                  <p className="text-sm font-medium text-[var(--muted-foreground)]">Captacoes Ativas</p>
+                  <p className="text-2xl font-bold text-[var(--card-foreground)]">{stats.captacoes_ativas}</p>
+                </div>
+                <div className="rounded-lg bg-green-500/10 p-3 group-hover:bg-green-500/20 transition-colors">
+                  <Zap className="h-6 w-6 text-green-600" />
+                </div>
+              </div>
+              <div className="mt-3 flex items-center gap-2">
+                <span className="text-xs text-[var(--muted-foreground)]">{stats.total_captacoes} total, {stats.captacoes_pausadas} pausadas</span>
+                <ArrowUpRight className="h-3 w-3 text-[var(--muted-foreground)] opacity-0 group-hover:opacity-100 transition-opacity ml-auto" />
+              </div>
+            </div>
+
+            <div
+              onClick={() => { setShowCanceladas(false); setSearchText(""); }}
+              className="rounded-lg border bg-[var(--card)] p-6 shadow-sm transition-all hover:shadow-md hover:border-blue-600/30 cursor-pointer group"
+            >
+              <div className="flex items-center justify-between">
+                <div className="space-y-1">
+                  <p className="text-sm font-medium text-[var(--muted-foreground)]">Execucoes Hoje</p>
+                  <p className="text-2xl font-bold text-[var(--card-foreground)]">{stats.execucoes_hoje}</p>
+                </div>
+                <div className="rounded-lg bg-blue-500/10 p-3 group-hover:bg-blue-500/20 transition-colors">
+                  <Activity className="h-6 w-6 text-blue-600" />
+                </div>
+              </div>
+              <div className="mt-3 flex items-center gap-2">
+                <span className="text-xs font-medium text-green-600">+{stats.total_execucoes} total</span>
+                <ArrowUpRight className="h-3 w-3 text-[var(--muted-foreground)] opacity-0 group-hover:opacity-100 transition-opacity ml-auto" />
+              </div>
+            </div>
+
+            <div
+              onClick={() => { setShowCanceladas(false); setSearchText(""); }}
+              className="rounded-lg border bg-[var(--card)] p-6 shadow-sm transition-all hover:shadow-md hover:border-amber-600/30 cursor-pointer group"
+            >
+              <div className="flex items-center justify-between">
+                <div className="space-y-1">
+                  <p className="text-sm font-medium text-[var(--muted-foreground)]">Novos Encontrados</p>
+                  <p className="text-2xl font-bold text-[var(--card-foreground)]">{stats.total_novos_encontrados}</p>
+                </div>
+                <div className="rounded-lg bg-amber-500/10 p-3 group-hover:bg-amber-500/20 transition-colors">
+                  <FileText className="h-6 w-6 text-amber-600" />
+                </div>
+              </div>
+              <div className="mt-3 flex items-center gap-2">
+                <span className="text-xs text-[var(--muted-foreground)]">Publicacoes novas de todas as captacoes</span>
+                <ArrowUpRight className="h-3 w-3 text-[var(--muted-foreground)] opacity-0 group-hover:opacity-100 transition-opacity ml-auto" />
+              </div>
+            </div>
+
+            <div className="rounded-lg border bg-[var(--card)] p-6 shadow-sm transition-shadow hover:shadow-md">
+              <div className="flex items-center justify-between">
+                <div className="space-y-1">
+                  <p className="text-sm font-medium text-[var(--muted-foreground)]">Ultima Execucao</p>
+                  <p className="text-2xl font-bold text-[var(--card-foreground)]">
+                    {stats.ultima_execucao ? new Date(stats.ultima_execucao).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" }) : "--:--"}
+                  </p>
+                </div>
+                <div className="rounded-lg bg-purple-500/10 p-3">
+                  <Clock className="h-6 w-6 text-purple-600" />
+                </div>
+              </div>
+              <div className="mt-3 flex items-center gap-2">
+                <span className="text-xs text-[var(--muted-foreground)]">
+                  {stats.ultima_execucao ? new Date(stats.ultima_execucao).toLocaleDateString("pt-BR") : "Nenhuma execucao"}
+                </span>
+              </div>
+            </div>
+          </div>
+
+          {/* Breakdown: por_tipo + por_prioridade */}
+          {(stats.por_tipo && Object.keys(stats.por_tipo).length > 0) && (
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div className="rounded-lg border bg-[var(--card)] p-4 shadow-sm">
+                <h3 className="text-xs font-semibold text-[var(--muted-foreground)] uppercase tracking-wider mb-3 flex items-center gap-1.5">
+                  <BarChart3 className="h-3.5 w-3.5" /> Por Tipo de Busca
+                </h3>
+                <div className="space-y-2">
+                  {Object.entries(stats.por_tipo).sort((a, b) => b[1] - a[1]).map(([tipo, count]) => {
+                    const label = TIPO_BUSCA_OPTIONS.find(t => t.value === tipo)?.label || tipo;
+                    const pct = stats.captacoes_ativas > 0 ? Math.round((count / stats.captacoes_ativas) * 100) : 0;
+                    return (
+                      <button key={tipo} onClick={() => { setFilterTipo(tipo); setShowCanceladas(false); }} className="w-full text-left group">
+                        <div className="flex items-center justify-between text-xs mb-1">
+                          <span className="text-[var(--card-foreground)] group-hover:text-legal-600 transition-colors">{label}</span>
+                          <span className="font-semibold text-[var(--card-foreground)]">{count}</span>
+                        </div>
+                        <div className="h-1.5 rounded-full bg-[var(--secondary)]">
+                          <div className="h-1.5 rounded-full bg-legal-600 transition-all" style={{ width: `${pct}%` }} />
+                        </div>
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+              <div className="rounded-lg border bg-[var(--card)] p-4 shadow-sm">
+                <h3 className="text-xs font-semibold text-[var(--muted-foreground)] uppercase tracking-wider mb-3 flex items-center gap-1.5">
+                  <TrendingUp className="h-3.5 w-3.5" /> Por Prioridade
+                </h3>
+                <div className="space-y-2">
+                  {Object.entries(stats.por_prioridade || {}).sort((a, b) => b[1] - a[1]).map(([prio, count]) => {
+                    const info = PRIORIDADE_OPTIONS.find(p => p.value === prio);
+                    const pct = stats.captacoes_ativas > 0 ? Math.round((count / stats.captacoes_ativas) * 100) : 0;
+                    const barColor = prio === "urgente" ? "bg-red-500" : prio === "normal" ? "bg-blue-500" : "bg-gray-400";
+                    return (
+                      <button key={prio} onClick={() => { setFilterPrioridade(prio); setShowCanceladas(false); }} className="w-full text-left group">
+                        <div className="flex items-center justify-between text-xs mb-1">
+                          <span className={`${info?.color || "text-[var(--card-foreground)]"} group-hover:opacity-80 transition-opacity`}>{info?.label || prio}</span>
+                          <span className="font-semibold text-[var(--card-foreground)]">{count}</span>
+                        </div>
+                        <div className="h-1.5 rounded-full bg-[var(--secondary)]">
+                          <div className={`h-1.5 rounded-full ${barColor} transition-all`} style={{ width: `${pct}%` }} />
+                        </div>
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            </div>
+          )}
+        </>
       )}
 
       {/* Form (Create or Edit) */}
@@ -387,8 +718,53 @@ export default function CaptacaoPage() {
 
       {/* List */}
       <div className="space-y-3">
-        {/* Toggle Ativas / Canceladas */}
-        <div className="flex items-center justify-between">
+        {/* Search & Filter Bar */}
+        <div className="rounded-lg border bg-[var(--card)] p-3 shadow-sm space-y-3">
+          <div className="flex items-center gap-3 flex-wrap">
+            <div className="relative flex-1 min-w-[200px]">
+              <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-[var(--muted-foreground)]" />
+              <input
+                type="text"
+                value={searchText}
+                onChange={(e) => setSearchText(e.target.value)}
+                placeholder="Buscar por nome, processo, OAB, parte, advogado..."
+                className="w-full rounded-lg border bg-[var(--background)] py-2 pl-9 pr-3 text-sm text-[var(--foreground)] placeholder:text-[var(--muted-foreground)] focus:border-legal-600 focus:outline-none focus:ring-2 focus:ring-legal-600/20"
+              />
+            </div>
+            <select
+              value={filterTipo}
+              onChange={(e) => setFilterTipo(e.target.value)}
+              className="rounded-lg border bg-[var(--background)] px-3 py-2 text-sm text-[var(--foreground)] focus:border-legal-600 focus:outline-none"
+            >
+              <option value="todos">Todos os tipos</option>
+              {TIPO_BUSCA_OPTIONS.map(t => (
+                <option key={t.value} value={t.value}>{t.label}</option>
+              ))}
+            </select>
+            <select
+              value={filterPrioridade}
+              onChange={(e) => setFilterPrioridade(e.target.value)}
+              className="rounded-lg border bg-[var(--background)] px-3 py-2 text-sm text-[var(--foreground)] focus:border-legal-600 focus:outline-none"
+            >
+              <option value="todos">Todas prioridades</option>
+              {PRIORIDADE_OPTIONS.map(p => (
+                <option key={p.value} value={p.value}>{p.label}</option>
+              ))}
+            </select>
+            {(searchText || filterTipo !== "todos" || filterPrioridade !== "todos") && (
+              <button
+                onClick={() => { setSearchText(""); setFilterTipo("todos"); setFilterPrioridade("todos"); }}
+                className="inline-flex items-center gap-1 rounded-lg border px-3 py-2 text-xs font-medium text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors"
+              >
+                <XCircle className="h-3.5 w-3.5" />
+                Limpar
+              </button>
+            )}
+          </div>
+        </div>
+
+        {/* Toggle Ativas / Canceladas + Executar Todas */}
+        <div className="flex items-center justify-between flex-wrap gap-2">
           <div className="flex items-center gap-2">
             <button
               onClick={() => setShowCanceladas(false)}
@@ -413,20 +789,45 @@ export default function CaptacaoPage() {
               Canceladas ({captacoes.filter(c => !c.ativo).length})
             </button>
           </div>
-          <span className="text-xs text-[var(--muted-foreground)]">
-            Total: {captacoes.length} captacoes
-          </span>
+          <div className="flex items-center gap-2">
+            <span className="text-xs text-[var(--muted-foreground)]">
+              {filteredCaptacoes.length} de {captacoes.length} captacoes
+            </span>
+            {!showCanceladas && captacoes.filter(c => c.ativo).length > 0 && (
+              <button
+                onClick={handleExecutarTodas}
+                disabled={executingAll}
+                className="inline-flex items-center gap-1.5 rounded-lg bg-green-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+              >
+                {executingAll ? <RefreshCw className="h-3.5 w-3.5 animate-spin" /> : <PlayCircle className="h-3.5 w-3.5" />}
+                {executingAll ? "Executando..." : "Executar Todas"}
+              </button>
+            )}
+          </div>
         </div>
 
         {(() => {
-          const filtered = showCanceladas
-            ? captacoes.filter(c => !c.ativo)
-            : captacoes.filter(c => c.ativo);
-
-          if (filtered.length === 0) {
+          if (filteredCaptacoes.length === 0) {
             return (
               <div className="rounded-lg border bg-[var(--card)] p-12 text-center">
-                {showCanceladas ? (
+                {searchText || filterTipo !== "todos" || filterPrioridade !== "todos" ? (
+                  <>
+                    <Search className="mx-auto h-12 w-12 text-[var(--muted-foreground)] mb-4" />
+                    <h3 className="text-lg font-medium text-[var(--card-foreground)] mb-2">
+                      Nenhuma captacao encontrada
+                    </h3>
+                    <p className="text-sm text-[var(--muted-foreground)] mb-4">
+                      Tente ajustar os filtros ou o termo de busca.
+                    </p>
+                    <button
+                      onClick={() => { setSearchText(""); setFilterTipo("todos"); setFilterPrioridade("todos"); }}
+                      className="inline-flex items-center gap-2 rounded-lg border px-4 py-2 text-sm font-medium text-[var(--foreground)] hover:bg-[var(--secondary)]"
+                    >
+                      <XCircle className="h-4 w-4" />
+                      Limpar Filtros
+                    </button>
+                  </>
+                ) : showCanceladas ? (
                   <>
                     <XCircle className="mx-auto h-12 w-12 text-[var(--muted-foreground)] mb-4" />
                     <h3 className="text-lg font-medium text-[var(--card-foreground)] mb-2">
@@ -458,7 +859,7 @@ export default function CaptacaoPage() {
             );
           }
 
-          return filtered.map((cap) => {
+          return filteredCaptacoes.map((cap) => {
             const lastSeen = seenCaptacoes[cap.id] || 0;
             const unseenCount = Math.max(0, cap.total_resultados - lastSeen);
             return (
@@ -480,6 +881,9 @@ export default function CaptacaoPage() {
               resultados={resultados}
               isLoadingDetail={isLoadingDetail}
               onEditar={() => setEditingCaptacao(cap)}
+              onExportCsv={() => handleExportCsv(cap.id)}
+              onExportJson={() => handleExportJson(cap.id)}
+              historicoStats={expandedId === cap.id ? historicoStats : null}
             />
             );
           });
@@ -510,6 +914,9 @@ function CaptacaoCard({
   resultados,
   isLoadingDetail,
   onEditar,
+  onExportCsv,
+  onExportJson,
+  historicoStats,
 }: {
   captacao: CaptacaoItem;
   isExpanded: boolean;
@@ -527,6 +934,9 @@ function CaptacaoCard({
   resultados: PublicacaoItem[];
   isLoadingDetail: boolean;
   onEditar: () => void;
+  onExportCsv: () => void;
+  onExportJson: () => void;
+  historicoStats: { completed: number; failed: number; total: number; totalResultados: number; totalNovos: number; avgDuration: number; successRate: number } | null;
 }) {
   const tipoLabel = TIPO_BUSCA_OPTIONS.find((t) => t.value === captacao.tipo_busca)?.label || captacao.tipo_busca;
   const prioridadeInfo = PRIORIDADE_OPTIONS.find((p) => p.value === captacao.prioridade) || PRIORIDADE_OPTIONS[1];
@@ -573,6 +983,11 @@ function CaptacaoCard({
     <div className="rounded-lg border bg-[var(--card)] shadow-sm overflow-hidden">
       {/* Header row */}
       <div
+        role="button"
+        tabIndex={0}
+        aria-expanded={isExpanded}
+        aria-label={`${isExpanded ? "Recolher" : "Expandir"} captação ${captacao.nome}`}
+        onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); onToggleExpand(); } }}
         className="flex items-center gap-3 p-4 cursor-pointer hover:bg-[var(--secondary)]/50 transition-colors"
         onClick={onToggleExpand}
       >
@@ -617,6 +1032,7 @@ function CaptacaoCard({
           {captacao.ativo && !captacao.pausado && (
             <button
               onClick={onPausar}
+              aria-label="Pausar captação"
               className="rounded-md border px-2 py-1.5 text-xs text-[var(--muted-foreground)] hover:bg-[var(--secondary)] transition-colors"
               title="Pausar"
             >
@@ -627,6 +1043,7 @@ function CaptacaoCard({
           {captacao.ativo && captacao.pausado && (
             <button
               onClick={onRetomar}
+              aria-label="Retomar captação"
               className="rounded-md border px-2 py-1.5 text-xs text-green-600 hover:bg-green-50 dark:hover:bg-green-900/20 transition-colors"
               title="Retomar"
             >
@@ -636,6 +1053,7 @@ function CaptacaoCard({
 
           <button
             onClick={onDesativar}
+            aria-label="Desativar captação"
             className="rounded-md border px-2 py-1.5 text-xs text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors"
             title="Desativar"
           >
@@ -644,6 +1062,7 @@ function CaptacaoCard({
 
           <button
             onClick={onClonar}
+            aria-label="Clonar captação"
             className="rounded-md border px-2 py-1.5 text-xs text-blue-500 hover:bg-blue-50 dark:hover:bg-blue-900/20 transition-colors"
             title="Clonar captação"
           >
@@ -686,6 +1105,24 @@ function CaptacaoCard({
               Publicacoes Encontradas ({resultados.length})
             </button>
           </div>
+
+          {/* Stats summary + export buttons */}
+          {historicoStats && detailTab === "historico" && (
+            <div className="px-4 pt-3 pb-1 flex flex-wrap items-center gap-3 text-xs border-b">
+              <span className="text-[var(--muted-foreground)]">
+                {historicoStats.total} execuções · {historicoStats.successRate}% sucesso · {historicoStats.totalNovos} novos encontrados
+                {historicoStats.avgDuration > 0 && ` · ${(historicoStats.avgDuration / 1000).toFixed(1)}s média`}
+              </span>
+              <div className="ml-auto flex gap-1">
+                <button onClick={onExportCsv} className="inline-flex items-center gap-1 rounded border px-2 py-1 text-xs hover:bg-[var(--secondary)] transition-colors" title="Exportar CSV">
+                  <Download className="h-3 w-3" /> CSV
+                </button>
+                <button onClick={onExportJson} className="inline-flex items-center gap-1 rounded border px-2 py-1 text-xs hover:bg-[var(--secondary)] transition-colors" title="Exportar JSON">
+                  <Download className="h-3 w-3" /> JSON
+                </button>
+              </div>
+            </div>
+          )}
 
           {/* Tab content */}
           <div className="p-4 max-h-96 overflow-y-auto">
@@ -1080,8 +1517,8 @@ function CaptacaoForm({
     if (["classe", "assunto", "tribunal_geral"].includes(tipoBusca)) {
       params.tribunal = tribunal.trim().toLowerCase();
     }
-    if (tipoBusca === "classe") params.classe_codigo = classeCodigo ? parseInt(classeCodigo) : undefined;
-    if (tipoBusca === "assunto") params.assunto_codigo = assuntoCodigo ? parseInt(assuntoCodigo) : undefined;
+    if (tipoBusca === "classe") params.classe_codigo = classeCodigo ? (isNaN(parseInt(classeCodigo, 10)) ? undefined : parseInt(classeCodigo, 10)) : undefined;
+    if (tipoBusca === "assunto") params.assunto_codigo = assuntoCodigo ? (isNaN(parseInt(assuntoCodigo, 10)) ? undefined : parseInt(assuntoCodigo, 10)) : undefined;
     params.data_inicio = dataInicio || "";
     params.data_fim = dataFim || "";
 

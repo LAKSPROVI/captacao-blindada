@@ -5,14 +5,43 @@
 version: "3.8"
 
 services:
+  caddy:
+    image: caddy:2-alpine
+    container_name: captacao-caddy
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+      - caddy-config:/config
+    environment:
+      - DOMAIN=${DOMAIN:-localhost}
+    depends_on:
+      - backend
+      - frontend
+    networks:
+      - captacao-net
+    security_opt:
+      - no-new-privileges:true
+    read_only: true
+    mem_limit: 256m
+    cpus: 0.25
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
   backend:
     build:
       context: .
       dockerfile: Dockerfile.backend
     container_name: captacao-backend
     restart: unless-stopped
-    ports:
-      - "${CAPTACAO_PORT:-8000}:8000"
+    expose:
+      - "8000"
     volumes:
       - captacao-data:/app/data
     env_file:
@@ -20,8 +49,7 @@ services:
     environment:
       - CAPTACAO_DB_PATH=/app/data/captacao_blindada.db
       - PYTHONPATH=/app
-      - IS_PRODUCTION=${IS_PRODUCTION:-false}
-      - JWT_SECRET_KEY=${JWT_SECRET_KEY:-default-dev-key-change-in-production}
+      - IS_PRODUCTION=${IS_PRODUCTION:-true}
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8000/api/metrics/health"]
       interval: 60s
@@ -30,6 +58,15 @@ services:
       retries: 5
     networks:
       - captacao-net
+    security_opt:
+      - no-new-privileges:true
+    mem_limit: 1g
+    cpus: 1.0
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
 
   frontend:
     build:
@@ -37,17 +74,33 @@ services:
       dockerfile: Dockerfile.frontend
     container_name: captacao-frontend
     restart: unless-stopped
-    ports:
-      - "${FRONTEND_PORT:-3000}:3000"
+    expose:
+      - "3000"
     environment:
       - NEXT_PUBLIC_API_URL=${NEXT_PUBLIC_API_URL:-http://backend:8000}
     depends_on:
       - backend
     networks:
       - captacao-net
+    security_opt:
+      - no-new-privileges:true
+    read_only: true
+    tmpfs:
+      - /tmp
+    mem_limit: 512m
+    cpus: 0.5
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
 
 volumes:
   captacao-data:
+    driver: local
+  caddy-data:
+    driver: local
+  caddy-config:
     driver: local
 
 networks:

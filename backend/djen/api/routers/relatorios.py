@@ -9,10 +9,12 @@ import json
 from datetime import datetime, timedelta
 from typing import Optional
 
-from fastapi import APIRouter, Query
+from fastapi import Request, APIRouter, Depends, Query
 from fastapi.responses import StreamingResponse
 
 from djen.api.database import Database
+from djen.api.auth import get_current_user, UserInDB
+from djen.api.ratelimit import limiter
 
 log = logging.getLogger("captacao.relatorios")
 router = APIRouter(prefix="/api/relatorios", tags=["Relatorios"])
@@ -24,7 +26,8 @@ def get_db() -> Database:
 
 
 @router.get("/semanal", summary="Relatório semanal")
-def relatorio_semanal():
+@limiter.limit("60/minute")
+def relatorio_semanal(request: Request):
     """Gera relatório semanal com resumo de atividades."""
     db = get_db()
     
@@ -77,7 +80,8 @@ def relatorio_semanal():
 
 
 @router.get("/semanal/csv", summary="Relatório semanal em CSV")
-def relatorio_semanal_csv():
+@limiter.limit("60/minute")
+def relatorio_semanal_csv(request: Request):
     """Exporta relatório semanal em CSV."""
     db = get_db()
     
@@ -103,7 +107,8 @@ def relatorio_semanal_csv():
 
 
 @router.get("/diario", summary="Relatório diário")
-def relatorio_diario():
+@limiter.limit("60/minute")
+def relatorio_diario(request: Request):
     """Gera relatório do dia atual."""
     db = get_db()
     

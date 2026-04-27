@@ -1,8 +1,13 @@
-import requests, json, sys
+import requests, json, sys, os
+
+DATAJUD_API_KEY = os.environ.get("DATAJUD_API_KEY", "")
+if not DATAJUD_API_KEY:
+    print("[ERRO] DATAJUD_API_KEY nao definida. Defina a variavel de ambiente.")
+    sys.exit(1)
 
 session = requests.Session()
 session.headers.update({
-    "Authorization": "APIKey cDZHYzlZa0JadVREZDJCendQbXY6SkJlTzNjLV9TRENyQk1RdnFKZGRQdw==",
+    "Authorization": f"APIKey {DATAJUD_API_KEY}",
     "Content-Type": "application/json",
 })
 

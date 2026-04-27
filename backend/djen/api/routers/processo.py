@@ -10,14 +10,16 @@ import json
 import logging
 from typing import Optional, List
 
-from fastapi import APIRouter, HTTPException, Query, WebSocket, WebSocketDisconnect
+from fastapi import Request, APIRouter, HTTPException, Query, WebSocket, WebSocketDisconnect
 from pydantic import BaseModel, Field
 
+from djen.api.ratelimit import limiter
 from djen.agents.canonical_model import (
     ProcessoResponse, ProcessoResumoResponse,
     TimelineResponse, RiscoResponse, PipelineStatusResponse,
 )
 from djen.agents.pipeline_service import get_pipeline_service, get_cache, get_tracker
+from djen.api.auth import get_current_user, UserInDB
 
 log = logging.getLogger("captacao.api.processo")
 
@@ -57,7 +59,8 @@ class CacheStatsResponse(BaseModel):
 # =========================================================================
 
 @router.get("/agents", summary="Listar agentes disponiveis")
-def listar_agentes():
+@limiter.limit("60/minute")
+def listar_agentes(request: Request):
     """Lista todos os agentes registrados no sistema multi-agentes."""
     service = get_pipeline_service()
     return {
@@ -68,7 +71,8 @@ def listar_agentes():
 
 
 @router.get("/cache/stats", summary="Estatisticas do cache")
-def cache_stats():
+@limiter.limit("60/minute")
+def cache_stats(request: Request):
     """Retorna estatisticas do cache em memoria."""
     cache = get_cache()
     return {
@@ -78,8 +82,8 @@ def cache_stats():
 
 
 @router.get("/resultados", summary="Listar resultados persistidos")
-def listar_resultados(
-    limit: int = Query(DEFAULT_LIMIT, ge=1, le=MAX_LIMIT, description="Limite de resultados"),
+@limiter.limit("60/minute")
+def listar_resultados(request: Request, limit: int = Query(DEFAULT_LIMIT, ge=1, le=MAX_LIMIT, description="Limite de resultados"),
     offset: int = Query(0, ge=0, description="Offset para paginacao"),
     tribunal: Optional[str] = Query(None, description="Filtrar por tribunal"),
     area: Optional[str] = Query(None, description="Filtrar por area juridica"),
@@ -109,8 +113,8 @@ def listar_resultados(
                 "resultados": resultados[offset:offset + limit],
             }
         except Exception as e:
-            log.error("Erro na busca textual: %s", e)
-            raise HTTPException(status_code=500, detail=str(e))
+            log.error("Erro na busca textual: %s", e, exc_info=True)
+            raise HTTPException(status_code=500, detail="Erro interno do servidor")
 
     dados = service.listar_resultados(
         limit=limit, offset=offset,
@@ -123,7 +127,8 @@ def listar_resultados(
 
 
 @router.get("/resultados/stats", summary="Estatisticas dos resultados persistidos")
-def stats_resultados():
+@limiter.limit("60/minute")
+def stats_resultados(request: Request):
     """Retorna estatisticas sobre os resultados de analise armazenados."""
     try:
         from djen.agents.pipeline_service import get_resultado_repo
@@ -133,12 +138,13 @@ def stats_resultados():
             "stats": repo.stats(),
         }
     except Exception as e:
-        log.error("Erro ao obter stats: %s", e)
-        raise HTTPException(status_code=500, detail=str(e))
+        log.error("Erro ao obter stats: %s", e, exc_info=True)
+        raise HTTPException(status_code=500, detail="Erro ao acessar banco de dados")
 
 
 @router.delete("/resultados/{numero}", summary="Deletar resultado persistido")
-def deletar_resultado(numero: str):
+@limiter.limit("30/minute")
+def deletar_resultado(request: Request, numero: str):
     """Remove um resultado de analise do banco de dados."""
     try:
         from djen.agents.pipeline_service import get_resultado_repo
@@ -150,12 +156,13 @@ def deletar_resultado(numero: str):
     except HTTPException:
         raise
     except Exception as e:
-        log.error("Erro ao deletar resultado: %s", e)
-        raise HTTPException(status_code=500, detail=str(e))
+        log.error("Erro ao deletar resultado: %s", e, exc_info=True)
+        raise HTTPException(status_code=500, detail="Erro ao acessar banco de dados")
 
 
 @router.delete("/cache", summary="Limpar cache")
-def limpar_cache():
+@limiter.limit("30/minute")
+def limpar_cache(request: Request):
     """Limpa todo o cache em memoria."""
     cache = get_cache()
     cache.clear()
@@ -163,6 +170,7 @@ def limpar_cache():
 
 
 @router.post("/analisar", summary="Analisar processo com pipeline multi-agentes")
+@limiter.limit("30/minute")
 def analisar_processo(request: AnalisarRequest):
     """
     Executa o pipeline completo de agentes sobre um processo judicial.
@@ -193,8 +201,8 @@ def analisar_processo(request: AnalisarRequest):
             tempo_processamento_ms=processo.processing_time_ms or 0,
         )
     except Exception as e:
-        log.error("Erro ao analisar processo %s: %s", request.numero_processo, e)
-        raise HTTPException(status_code=500, detail=str(e))
+        log.error("Erro ao analisar processo %s: %s", request.numero_processo, e, exc_info=True)
+        raise HTTPException(status_code=500, detail="Erro interno do servidor")
 
 
 # =========================================================================
@@ -202,8 +210,8 @@ def analisar_processo(request: AnalisarRequest):
 # =========================================================================
 
 @router.get("/{numero}", summary="Obter processo enriquecido")
-def obter_processo(
-    numero: str,
+@limiter.limit("60/minute")
+def obter_processo(request: Request, numero: str,
     tribunal: Optional[str] = Query(None, description="Sigla do tribunal"),
     force_refresh: bool = Query(False, description="Ignorar cache"),
 ):
@@ -226,13 +234,13 @@ def obter_processo(
             tempo_processamento_ms=processo.processing_time_ms or 0,
         )
     except Exception as e:
-        log.error("Erro ao obter processo %s: %s", numero, e)
-        raise HTTPException(status_code=500, detail=str(e))
+        log.error("Erro ao obter processo %s: %s", numero, e, exc_info=True)
+        raise HTTPException(status_code=500, detail="Erro interno do servidor")
 
 
 @router.get("/{numero}/resumo", summary="Visao executiva do processo")
-def resumo_processo(
-    numero: str,
+@limiter.limit("60/minute")
+def resumo_processo(request: Request, numero: str,
     tribunal: Optional[str] = Query(None),
 ):
     """Retorna visao executiva resumida do processo."""
@@ -241,13 +249,13 @@ def resumo_processo(
         processo = service.analisar(numero_processo=numero, tribunal=tribunal)
         return service.get_resumo(processo)
     except Exception as e:
-        log.error("Erro ao gerar resumo %s: %s", numero, e)
-        raise HTTPException(status_code=500, detail=str(e))
+        log.error("Erro ao gerar resumo %s: %s", numero, e, exc_info=True)
+        raise HTTPException(status_code=500, detail="Erro interno do servidor")
 
 
 @router.get("/{numero}/timeline", summary="Timeline do processo")
-def timeline_processo(
-    numero: str,
+@limiter.limit("60/minute")
+def timeline_processo(request: Request, numero: str,
     tribunal: Optional[str] = Query(None),
     min_relevancia: int = Query(1, ge=1, le=10, description="Relevancia minima dos eventos"),
 ):
@@ -266,13 +274,13 @@ def timeline_processo(
 
         return timeline_resp
     except Exception as e:
-        log.error("Erro ao gerar timeline %s: %s", numero, e)
-        raise HTTPException(status_code=500, detail=str(e))
+        log.error("Erro ao gerar timeline %s: %s", numero, e, exc_info=True)
+        raise HTTPException(status_code=500, detail="Erro interno do servidor")
 
 
 @router.get("/{numero}/riscos", summary="Indicadores de risco do processo")
-def riscos_processo(
-    numero: str,
+@limiter.limit("60/minute")
+def riscos_processo(request: Request, numero: str,
     tribunal: Optional[str] = Query(None),
 ):
     """Retorna analise de riscos multidimensional do processo."""
@@ -281,12 +289,13 @@ def riscos_processo(
         processo = service.analisar(numero_processo=numero, tribunal=tribunal)
         return service.get_riscos(processo)
     except Exception as e:
-        log.error("Erro ao analisar riscos %s: %s", numero, e)
-        raise HTTPException(status_code=500, detail=str(e))
+        log.error("Erro ao analisar riscos %s: %s", numero, e, exc_info=True)
+        raise HTTPException(status_code=500, detail="Erro interno do servidor")
 
 
 @router.get("/{numero}/status", summary="Status do pipeline de analise")
-def status_pipeline(numero: str):
+@limiter.limit("60/minute")
+def status_pipeline(request: Request, numero: str):
     """Retorna status atual do pipeline de analise (para polling)."""
     service = get_pipeline_service()
     status = service.get_pipeline_status(numero)
@@ -296,7 +305,8 @@ def status_pipeline(numero: str):
 
 
 @router.delete("/{numero}/cache", summary="Invalidar cache de um processo")
-def invalidar_cache_processo(numero: str):
+@limiter.limit("30/minute")
+def invalidar_cache_processo(request: Request, numero: str):
     """Remove um processo especifico do cache."""
     cache = get_cache()
     cache.invalidate(numero)

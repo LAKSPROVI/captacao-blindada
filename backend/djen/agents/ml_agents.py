@@ -15,6 +15,16 @@ from typing import Any, Dict, List, Optional
 
 import requests
 
+from djen.agents.sanitize import (
+    sanitize_for_llm,
+    sanitize_llm_output_text,
+    sanitize_string_list,
+    validate_area,
+    validate_fase,
+    validate_previsao,
+    validate_score,
+)
+
 from djen.agents.canonical_model import (
     FaseProcessual,
     IndicadorRisco,
@@ -215,56 +225,66 @@ def _parse_json_response(text: Optional[str]) -> Optional[Dict[str, Any]]:
 
 
 def _build_process_context(p: ProcessoCanonical) -> str:
-    """Monta contexto textual do processo para envio ao LLM."""
+    """Monta contexto textual do processo para envio ao LLM.
+
+    Todos os campos textuais oriundos de dados externos (partes, movimentacoes,
+    comunicacoes) sao sanitizados antes da inclusao no prompt.
+    """
     parts = [
-        f"Numero: {p.numero_formatado or p.numero_processo}",
-        f"Tribunal: {p.tribunal or 'N/A'}",
-        f"Classe Processual: {p.classe_processual or 'N/A'}",
-        f"Orgao Julgador: {p.orgao_julgador or 'N/A'}",
-        f"Grau: {p.grau or 'N/A'}",
-        f"Area: {p.area or 'N/A'}",
+        f"Numero: {sanitize_for_llm(p.numero_formatado or p.numero_processo, max_length=100)}",
+        f"Tribunal: {sanitize_for_llm(p.tribunal or 'N/A', max_length=100)}",
+        f"Classe Processual: {sanitize_for_llm(p.classe_processual or 'N/A', max_length=200)}",
+        f"Orgao Julgador: {sanitize_for_llm(p.orgao_julgador or 'N/A', max_length=200)}",
+        f"Grau: {sanitize_for_llm(p.grau or 'N/A', max_length=50)}",
+        f"Area: {sanitize_for_llm(p.area or 'N/A', max_length=50)}",
         f"Fase: {p.fase.value if p.fase else 'N/A'}",
         f"Status: {p.status.value if p.status else 'N/A'}",
         f"Data Ajuizamento: {p.data_ajuizamento or 'N/A'}",
         f"Duracao (dias): {p.duracao_dias or 'N/A'}",
         f"Valor da Causa: R$ {p.valor_causa:,.2f}" if p.valor_causa else "Valor da Causa: N/A",
-        f"Assuntos: {', '.join(p.assuntos) if p.assuntos else 'N/A'}",
+        f"Assuntos: {', '.join(sanitize_for_llm(a, max_length=100) for a in p.assuntos) if p.assuntos else 'N/A'}",
     ]
 
     if p.partes:
         partes_desc = []
         for parte in p.partes[:10]:
             polo = parte.polo.value if parte.polo else "desconhecido"
-            partes_desc.append(f"  - {parte.nome} (polo: {polo}, tipo: {parte.tipo.value if parte.tipo else 'N/A'})")
+            nome_sanitizado = sanitize_for_llm(parte.nome, max_length=200)
+            partes_desc.append(f"  - {nome_sanitizado} (polo: {polo}, tipo: {parte.tipo.value if parte.tipo else 'N/A'})")
         parts.append("Partes:\n" + "\n".join(partes_desc))
 
     if p.movimentacoes:
         movs_desc = []
         for mov in p.movimentacoes[:15]:
-            movs_desc.append(f"  - [{mov.data[:10] if mov.data else 'N/A'}] {mov.nome} (tipo: {mov.tipo or 'N/A'})")
+            nome_mov = sanitize_for_llm(mov.nome, max_length=300)
+            tipo_mov = sanitize_for_llm(mov.tipo or 'N/A', max_length=100)
+            movs_desc.append(f"  - [{mov.data[:10] if mov.data else 'N/A'}] {nome_mov} (tipo: {tipo_mov})")
         parts.append(f"Movimentacoes ({p.total_movimentacoes} total, ultimas 15):\n" + "\n".join(movs_desc))
 
     if p.comunicacoes:
         coms_desc = []
         for com in p.comunicacoes[:5]:
-            texto_resumo = (com.texto or "")[:300]
+            texto_resumo = sanitize_for_llm(com.texto or "", max_length=300)
+            tipo_com = sanitize_for_llm(com.tipo or "", max_length=100)
             coms_desc.append(
                 f"  - [{com.data_disponibilizacao[:10] if com.data_disponibilizacao else 'N/A'}] "
-                f"{com.tipo}: {texto_resumo}..."
+                f"{tipo_com}: {texto_resumo}"
             )
         parts.append(f"Comunicacoes ({p.total_comunicacoes} total, ultimas 5):\n" + "\n".join(coms_desc))
 
     if p.indicadores_risco:
         riscos_desc = []
         for ind in p.indicadores_risco:
-            riscos_desc.append(f"  - [{ind.categoria}] {ind.nivel.value}: {ind.descricao}")
+            desc_risco = sanitize_for_llm(ind.descricao, max_length=300)
+            riscos_desc.append(f"  - [{ind.categoria}] {ind.nivel.value}: {desc_risco}")
         parts.append("Indicadores de Risco:\n" + "\n".join(riscos_desc))
 
     if p.prazos:
         prazos_desc = []
         for prazo in p.prazos[:5]:
+            tipo_prazo = sanitize_for_llm(prazo.tipo or "", max_length=100)
             prazos_desc.append(
-                f"  - {prazo.tipo}: vence em {prazo.data_fim} "
+                f"  - {tipo_prazo}: vence em {prazo.data_fim} "
                 f"({prazo.dias_restantes} dias restantes, urgente: {prazo.urgente})"
             )
         parts.append("Prazos:\n" + "\n".join(prazos_desc))
@@ -272,7 +292,8 @@ def _build_process_context(p: ProcessoCanonical) -> str:
     if p.valores:
         vals_desc = []
         for v in p.valores[:10]:
-            vals_desc.append(f"  - {v.tipo}: R$ {v.valor:,.2f}")
+            tipo_val = sanitize_for_llm(v.tipo or "", max_length=100)
+            vals_desc.append(f"  - {tipo_val}: R$ {v.valor:,.2f}")
         parts.append("Valores:\n" + "\n".join(vals_desc))
 
     return "\n".join(parts)
@@ -332,17 +353,14 @@ class ClassificadorCausaML(BaseAgent):
             return self._fallback(p)
 
         try:
-            area = parsed.get("area", "").lower().strip()
-            fase_str = parsed.get("fase", "").lower().strip()
+            # Output validation: validate area and fase against allowed enums
+            area = validate_area(parsed.get("area", ""))
+            fase_str = validate_fase(parsed.get("fase", ""))
 
-            areas_validas = {
-                "criminal", "trabalhista", "tributaria", "familia", "consumidor",
-                "civel", "ambiental", "administrativo", "previdenciario", "empresarial",
-            }
-            if area in areas_validas:
+            if area:
                 p.area = area
             else:
-                self.log.warning("[%s] Area invalida do LLM: '%s'", self.name, area)
+                self.log.warning("[%s] Area invalida do LLM: '%s'", self.name, parsed.get("area", ""))
 
             fase_map = {
                 "conhecimento": FaseProcessual.conhecimento,
@@ -353,7 +371,7 @@ class ClassificadorCausaML(BaseAgent):
                 "cautelar": FaseProcessual.cautelar,
                 "desconhecida": FaseProcessual.desconhecida,
             }
-            if fase_str in fase_map:
+            if fase_str and fase_str in fase_map:
                 p.fase = fase_map[fase_str]
 
             self.log.info("[%s] Classificacao via LLM: area=%s, fase=%s", self.name, p.area, p.fase)
@@ -427,12 +445,12 @@ class PrevisorResultadoML(BaseAgent):
             return self._fallback(p)
 
         try:
-            previsao = parsed.get("previsao", "moderado").lower().strip()
-            confianca = float(parsed.get("confianca", 0.5))
-            confianca = max(0.0, min(1.0, confianca))
-            fundamentacao = parsed.get("fundamentacao", "")
-            fatores_positivos = parsed.get("fatores_positivos", [])
-            fatores_negativos = parsed.get("fatores_negativos", [])
+            # Output validation: validate previsao and score ranges
+            previsao = validate_previsao(parsed.get("previsao", "moderado"))
+            confianca = validate_score(parsed.get("confianca", 0.5))
+            fundamentacao = sanitize_llm_output_text(parsed.get("fundamentacao", ""), max_length=1000)
+            fatores_positivos = sanitize_string_list(parsed.get("fatores_positivos", []), max_items=5, max_item_length=300)
+            fatores_negativos = sanitize_string_list(parsed.get("fatores_negativos", []), max_items=5, max_item_length=300)
 
             # Mapear previsao para nivel de risco
             previsao_map = {
@@ -450,15 +468,15 @@ class PrevisorResultadoML(BaseAgent):
             if fundamentacao:
                 descricao_parts.append(f"Fundamentacao: {fundamentacao[:300]}")
             if fatores_positivos:
-                descricao_parts.append(f"Fatores positivos: {'; '.join(fatores_positivos[:5])}")
+                descricao_parts.append(f"Fatores positivos: {'; '.join(fatores_positivos)}")
             if fatores_negativos:
-                descricao_parts.append(f"Fatores negativos: {'; '.join(fatores_negativos[:5])}")
+                descricao_parts.append(f"Fatores negativos: {'; '.join(fatores_negativos)}")
 
             p.indicadores_risco.append(IndicadorRisco(
                 categoria="previsao_resultado",
                 nivel=nivel,
                 score=score,
-                descricao=" | ".join(descricao_parts),
+                descricao=sanitize_llm_output_text(" | ".join(descricao_parts), max_length=1500),
                 recomendacao=(
                     "Resultado favoravel previsto - manter estrategia"
                     if previsao == "favoravel"
@@ -543,21 +561,22 @@ class GeradorResumoML(BaseAgent):
             return self._fallback(p)
 
         try:
-            resumo = parsed.get("resumo_executivo")
-            situacao = parsed.get("situacao_atual")
-            pontos = parsed.get("pontos_atencao", [])
-            passos = parsed.get("proximos_passos", [])
+            # Output validation: sanitize all text fields from LLM response
+            resumo = sanitize_llm_output_text(parsed.get("resumo_executivo", ""), max_length=2000)
+            situacao = sanitize_llm_output_text(parsed.get("situacao_atual", ""), max_length=1000)
+            pontos = sanitize_string_list(parsed.get("pontos_atencao", []), max_items=10, max_item_length=500)
+            passos = sanitize_string_list(parsed.get("proximos_passos", []), max_items=10, max_item_length=500)
 
             if resumo:
                 p.resumo_executivo = resumo
             if situacao:
                 p.resumo_situacao_atual = situacao
-            if pontos and isinstance(pontos, list):
+            if pontos:
                 # Preservar pontos existentes de outros agentes e adicionar os do LLM
-                pontos_ml = [f"[ML] {pt}" for pt in pontos if isinstance(pt, str)]
+                pontos_ml = [f"[ML] {pt}" for pt in pontos]
                 p.pontos_atencao = pontos_ml + p.pontos_atencao
-            if passos and isinstance(passos, list):
-                p.proximos_passos = [pt for pt in passos if isinstance(pt, str)]
+            if passos:
+                p.proximos_passos = passos
 
             self.log.info("[%s] Resumo gerado via LLM (%d chars)", self.name, len(resumo or ""))
         except Exception as exc:
@@ -637,22 +656,17 @@ class AnalisadorJurisprudenciaML(BaseAgent):
 
         try:
             teses = parsed.get("teses", [])
-            analise = parsed.get("analise_geral", "")
-            favorabilidade_geral = float(parsed.get("favorabilidade_geral", 0.5))
-            favorabilidade_geral = max(0.0, min(1.0, favorabilidade_geral))
+            analise = sanitize_llm_output_text(parsed.get("analise_geral", ""), max_length=1000)
+            favorabilidade_geral = validate_score(parsed.get("favorabilidade_geral", 0.5))
 
-            # Adicionar teses como pontos de atencao
-            for tese in teses:
+            # Adicionar teses como pontos de atencao (max 10 teses)
+            for tese in teses[:10]:
                 if not isinstance(tese, dict):
                     continue
-                desc = tese.get("tese", "")
-                ref = tese.get("referencia", "")
-                tribunal = tese.get("tribunal", "")
-                fav = tese.get("favorabilidade", 0.5)
-                try:
-                    fav = float(fav)
-                except (ValueError, TypeError):
-                    fav = 0.5
+                desc = sanitize_llm_output_text(tese.get("tese", ""), max_length=500)
+                ref = sanitize_llm_output_text(tese.get("referencia", ""), max_length=200)
+                tribunal = sanitize_llm_output_text(tese.get("tribunal", ""), max_length=50)
+                fav = validate_score(tese.get("favorabilidade", 0.5))
 
                 info = (
                     f"[JURISPRUDENCIA ML] {desc} - Ref: {ref}"
@@ -671,7 +685,7 @@ class AnalisadorJurisprudenciaML(BaseAgent):
                 nivel = NivelRisco.baixo
 
             descricao = (
-                f"Jurisprudencia (via LLM) na area '{p.area or 'N/A'}' com "
+                f"Jurisprudencia (via LLM) na area '{sanitize_for_llm(p.area or 'N/A', max_length=50)}' com "
                 f"favorabilidade geral de {favorabilidade_geral * 100:.0f}%"
             )
             if analise:
@@ -681,7 +695,7 @@ class AnalisadorJurisprudenciaML(BaseAgent):
                 categoria="jurisprudencia",
                 nivel=nivel,
                 score=round(1 - favorabilidade_geral, 2),
-                descricao=descricao,
+                descricao=sanitize_llm_output_text(descricao, max_length=1500),
                 recomendacao="Verificar teses identificadas pelo LLM e validar aplicabilidade ao caso concreto",
             ))
 

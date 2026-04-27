@@ -7,10 +7,12 @@ import os
 from datetime import datetime
 from typing import Optional
 
-from fastapi import APIRouter, Query, Body, HTTPException
+from fastapi import APIRouter, Depends, Query, Body, HTTPException, Request
 from pydantic import BaseModel
 
+from djen.api.ratelimit import limiter
 from djen.api.database import Database
+from djen.api.auth import get_current_user, UserInDB
 
 log = logging.getLogger("captacao.integracoes")
 router = APIRouter(prefix="/api/integracoes", tags=["Integracoes"])
@@ -32,7 +34,8 @@ class TelegramConfig(BaseModel):
 
 
 @router.get("/telegram/status", summary="Status do Telegram Bot")
-def telegram_status():
+@limiter.limit("60/minute")
+def telegram_status(request: Request, current_user: UserInDB = Depends(get_current_user)):
     token = os.environ.get("TELEGRAM_BOT_TOKEN", "")
     chat_id = os.environ.get("TELEGRAM_CHAT_ID", "")
     return {
@@ -43,18 +46,20 @@ def telegram_status():
 
 
 @router.post("/telegram/test", summary="Testar Telegram")
-def telegram_test(message: str = Body("Teste Captação Blindada")):
-    import requests
+@limiter.limit("5/minute")
+def telegram_test(request: Request, message: str = Body("Teste Captação Blindada"), current_user: UserInDB = Depends(get_current_user)):
+    import requests as _requests
     token = os.environ.get("TELEGRAM_BOT_TOKEN", "")
     chat_id = os.environ.get("TELEGRAM_CHAT_ID", "")
     if not token or not chat_id:
         return {"status": "error", "message": "TELEGRAM_BOT_TOKEN e TELEGRAM_CHAT_ID não configurados no .env"}
     try:
         url = f"https://api.telegram.org/bot{token}/sendMessage"
-        resp = requests.post(url, json={"chat_id": chat_id, "text": message, "parse_mode": "Markdown"}, timeout=10)
+        resp = _requests.post(url, json={"chat_id": chat_id, "text": message, "parse_mode": "Markdown"}, timeout=10)
         return {"status": "success" if resp.status_code < 400 else "error", "code": resp.status_code}
     except Exception as e:
-        return {"status": "error", "message": str(e)}
+        log.error("Erro ao testar Telegram: %s", e, exc_info=True)
+        return {"status": "error", "message": "Erro ao consultar servico externo"}
 
 
 # =============================================================================
@@ -62,21 +67,9 @@ def telegram_test(message: str = Body("Teste Captação Blindada")):
 # =============================================================================
 
 @router.post("/webhook-receiver", summary="Receber webhook externo")
-def webhook_receiver(payload: dict = Body(...)):
+@limiter.limit("30/minute")
+def webhook_receiver(request: Request, payload: dict = Body(...), current_user: UserInDB = Depends(get_current_user)):
     db = get_db()
-    try:
-        db.conn.execute("""
-            CREATE TABLE IF NOT EXISTS webhook_received (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                source TEXT,
-                payload TEXT,
-                criado_em TEXT DEFAULT (datetime('now', 'localtime'))
-            )
-        """)
-        db.conn.commit()
-    except Exception:
-        pass
-    
     import json
     db.conn.execute(
         "INSERT INTO webhook_received (source, payload) VALUES (?, ?)",
@@ -87,7 +80,8 @@ def webhook_receiver(payload: dict = Body(...)):
 
 
 @router.get("/webhook-receiver/logs", summary="Logs de webhooks recebidos")
-def webhook_logs(limite: int = Query(50, ge=1, le=500)):
+@limiter.limit("60/minute")
+def webhook_logs(request: Request, limite: int = Query(50, ge=1, le=500), current_user: UserInDB = Depends(get_current_user)):
     db = get_db()
     try:
         rows = db.conn.execute("SELECT * FROM webhook_received ORDER BY id DESC LIMIT ?", (limite,)).fetchall()
@@ -101,7 +95,8 @@ def webhook_logs(limite: int = Query(50, ge=1, le=500)):
 # =============================================================================
 
 @router.get("/google-calendar/status", summary="Status Google Calendar")
-def google_calendar_status():
+@limiter.limit("60/minute")
+def google_calendar_status(request: Request):
     return {
         "status": "success",
         "enabled": False,
@@ -114,7 +109,8 @@ def google_calendar_status():
 # =============================================================================
 
 @router.get("/status", summary="Status de todas as integrações")
-def status_integracoes():
+@limiter.limit("60/minute")
+def status_integracoes(request: Request, current_user: UserInDB = Depends(get_current_user)):
     return {
         "status": "success",
         "integracoes": {

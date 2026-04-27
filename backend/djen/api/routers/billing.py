@@ -1,7 +1,8 @@
 import logging
 from typing import List, Dict, Any
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import Request, APIRouter, Depends, HTTPException, status
 from djen.api.auth import get_current_user, require_role, require_master_or_tenant_admin, UserInDB
+from djen.api.ratelimit import limiter
 from djen.api.schemas import (
     FunctionCostResponse, FunctionCostUpdateRequest, UsageLogResponse, BillingStatsResponse
 )
@@ -16,14 +17,16 @@ router = APIRouter(prefix="/api/billing", tags=["Tarifacao"])
 # =========================================================================
 
 @router.get("/costs", response_model=List[FunctionCostResponse])
-def listar_custos():
+@limiter.limit("60/minute")
+def listar_custos(request: Request):
     """Lista o custo atual de todas as funcoes."""
     db = get_database()
     rows = db.conn.execute("SELECT * FROM function_costs").fetchall()
     return [FunctionCostResponse(**dict(r)) for r in rows]
 
 @router.put("/costs/{function_name}", response_model=FunctionCostResponse)
-def definir_custo(function_name: str, cost: FunctionCostUpdateRequest, current_user: UserInDB = Depends(require_role("master"))):
+@limiter.limit("30/minute")
+def definir_custo(request: Request, function_name: str, cost: FunctionCostUpdateRequest, current_user: UserInDB = Depends(require_role("master"))):
     """(Master) Define ou atualiza o custo em tokens de uma funcao."""
     db = get_database()
     
@@ -60,7 +63,8 @@ def definir_custo(function_name: str, cost: FunctionCostUpdateRequest, current_u
 # =========================================================================
 
 @router.get("/usage", response_model=List[UsageLogResponse])
-def listar_uso(limit: int = 100, offset: int = 0, current_user: UserInDB = Depends(require_master_or_tenant_admin())):
+@limiter.limit("60/minute")
+def listar_uso(request: Request, limit: int = 100, offset: int = 0, current_user: UserInDB = Depends(require_master_or_tenant_admin())):
     """(Tenant Admin) Ve logs de uso do seu tenant. (Master) Ve de todos."""
     db = get_database()
     
@@ -78,7 +82,8 @@ def listar_uso(limit: int = 100, offset: int = 0, current_user: UserInDB = Depen
     return [UsageLogResponse(**dict(r)) for r in rows]
 
 @router.get("/stats", response_model=BillingStatsResponse)
-def obter_estatisticas(tenant_id: int = None, current_user: UserInDB = Depends(require_master_or_tenant_admin())):
+@limiter.limit("60/minute")
+def obter_estatisticas(request: Request, tenant_id: int = None, current_user: UserInDB = Depends(require_master_or_tenant_admin())):
     """Obtem dashboard de gastos formatado."""
     db = get_database()
     

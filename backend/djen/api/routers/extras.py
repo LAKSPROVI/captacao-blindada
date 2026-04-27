@@ -7,8 +7,10 @@ import logging
 import time
 from typing import Optional, List
 
-from fastapi import APIRouter, Query, Body
+from fastapi import Request, APIRouter, Depends, Query, Body
 from djen.api.database import Database
+from djen.api.auth import get_current_user, UserInDB
+from djen.api.ratelimit import limiter
 
 log = logging.getLogger("captacao.extras")
 router = APIRouter(prefix="/api/extras", tags=["Extras"])
@@ -24,7 +26,8 @@ def get_db() -> Database:
 # =========================================================================
 
 @router.post("/batch-insert-publicacoes")
-def batch_insert_publicacoes(publicacoes: List[dict] = Body(..., embed=False)):
+@limiter.limit("30/minute")
+def batch_insert_publicacoes(request: Request, publicacoes: List[dict] = Body(..., embed=False)):
     """Insere multiplas publicacoes de uma vez. Recebe lista de dicts de publicacao."""
     try:
         db = get_db()
@@ -49,7 +52,7 @@ def batch_insert_publicacoes(publicacoes: List[dict] = Body(..., embed=False)):
         }
     except Exception as e:
         log.error("Erro batch-insert-publicacoes: %s", e)
-        return {"status": "error", "message": str(e)}
+        return {"status": "error", "message": "Erro ao inserir publicacoes em lote"}
 
 
 # =========================================================================
@@ -57,7 +60,8 @@ def batch_insert_publicacoes(publicacoes: List[dict] = Body(..., embed=False)):
 # =========================================================================
 
 @router.get("/publicacoes-por-classe")
-def publicacoes_por_classe(limite: int = Query(50, ge=1, le=500)):
+@limiter.limit("60/minute")
+def publicacoes_por_classe(request: Request, limite: int = Query(50, ge=1, le=500)):
     """Agrupa publicacoes por classe_processual."""
     try:
         db = get_db()
@@ -73,7 +77,7 @@ def publicacoes_por_classe(limite: int = Query(50, ge=1, le=500)):
         return {"status": "success", "total_classes": len(data), "data": data}
     except Exception as e:
         log.error("Erro publicacoes-por-classe: %s", e)
-        return {"status": "error", "message": str(e), "data": []}
+        return {"status": "error", "message": "Erro ao acessar banco de dados", "data": []}
 
 
 # =========================================================================
@@ -81,7 +85,8 @@ def publicacoes_por_classe(limite: int = Query(50, ge=1, le=500)):
 # =========================================================================
 
 @router.get("/publicacoes-por-orgao")
-def publicacoes_por_orgao(limite: int = Query(50, ge=1, le=500)):
+@limiter.limit("60/minute")
+def publicacoes_por_orgao(request: Request, limite: int = Query(50, ge=1, le=500)):
     """Agrupa publicacoes por orgao_julgador."""
     try:
         db = get_db()
@@ -97,7 +102,7 @@ def publicacoes_por_orgao(limite: int = Query(50, ge=1, le=500)):
         return {"status": "success", "total_orgaos": len(data), "data": data}
     except Exception as e:
         log.error("Erro publicacoes-por-orgao: %s", e)
-        return {"status": "error", "message": str(e), "data": []}
+        return {"status": "error", "message": "Erro ao acessar banco de dados", "data": []}
 
 
 # =========================================================================
@@ -105,7 +110,8 @@ def publicacoes_por_orgao(limite: int = Query(50, ge=1, le=500)):
 # =========================================================================
 
 @router.get("/captacoes-por-tipo")
-def captacoes_por_tipo():
+@limiter.limit("60/minute")
+def captacoes_por_tipo(request: Request):
     """Agrupa captacoes por tipo_busca."""
     try:
         db = get_db()
@@ -130,7 +136,7 @@ def captacoes_por_tipo():
         return {"status": "success", "data": data}
     except Exception as e:
         log.error("Erro captacoes-por-tipo: %s", e)
-        return {"status": "error", "message": str(e), "data": []}
+        return {"status": "error", "message": "Erro ao acessar banco de dados", "data": []}
 
 
 # =========================================================================
@@ -138,7 +144,8 @@ def captacoes_por_tipo():
 # =========================================================================
 
 @router.get("/erros-por-tipo")
-def erros_por_tipo(dias: int = Query(30, ge=1, le=365)):
+@limiter.limit("60/minute")
+def erros_por_tipo(request: Request, dias: int = Query(30, ge=1, le=365)):
     """Agrupa erros do sistema por error_type nos ultimos N dias."""
     try:
         db = get_db()
@@ -162,7 +169,7 @@ def erros_por_tipo(dias: int = Query(30, ge=1, le=365)):
         return {"status": "success", "dias": dias, "data": data}
     except Exception as e:
         log.error("Erro erros-por-tipo: %s", e)
-        return {"status": "error", "message": str(e), "data": []}
+        return {"status": "error", "message": "Erro ao acessar banco de dados", "data": []}
 
 
 # =========================================================================
@@ -170,7 +177,8 @@ def erros_por_tipo(dias: int = Query(30, ge=1, le=365)):
 # =========================================================================
 
 @router.get("/erros-por-funcao")
-def erros_por_funcao(dias: int = Query(30, ge=1, le=365)):
+@limiter.limit("60/minute")
+def erros_por_funcao(request: Request, dias: int = Query(30, ge=1, le=365)):
     """Agrupa erros do sistema por function_name nos ultimos N dias."""
     try:
         db = get_db()
@@ -202,7 +210,8 @@ def erros_por_funcao(dias: int = Query(30, ge=1, le=365)):
 # =========================================================================
 
 @router.post("/limpar-publicacoes-duplicadas")
-def limpar_publicacoes_duplicadas():
+@limiter.limit("30/minute")
+def limpar_publicacoes_duplicadas(request: Request):
     """Remove publicacoes duplicadas por hash, mantendo a mais recente (maior id)."""
     try:
         db = get_db()
@@ -242,7 +251,7 @@ def limpar_publicacoes_duplicadas():
         }
     except Exception as e:
         log.error("Erro limpar-publicacoes-duplicadas: %s", e)
-        return {"status": "error", "message": str(e)}
+        return {"status": "error", "message": "Erro ao acessar banco de dados"}
 
 
 # =========================================================================
@@ -250,7 +259,8 @@ def limpar_publicacoes_duplicadas():
 # =========================================================================
 
 @router.get("/publicacoes-sem-processo")
-def publicacoes_sem_processo(limite: int = Query(50, ge=1, le=500), offset: int = Query(0, ge=0)):
+@limiter.limit("60/minute")
+def publicacoes_sem_processo(request: Request, limite: int = Query(50, ge=1, le=500), offset: int = Query(0, ge=0)):
     """Lista publicacoes que nao possuem numero_processo."""
     try:
         db = get_db()
@@ -277,7 +287,7 @@ def publicacoes_sem_processo(limite: int = Query(50, ge=1, le=500), offset: int 
         }
     except Exception as e:
         log.error("Erro publicacoes-sem-processo: %s", e)
-        return {"status": "error", "message": str(e), "data": []}
+        return {"status": "error", "message": "Erro ao acessar banco de dados", "data": []}
 
 
 # =========================================================================
@@ -285,7 +295,8 @@ def publicacoes_sem_processo(limite: int = Query(50, ge=1, le=500), offset: int 
 # =========================================================================
 
 @router.get("/saude-completa")
-def saude_completa():
+@limiter.limit("60/minute")
+def saude_completa(request: Request):
     """Saude completa do sistema: banco, scheduler, fontes, metricas, circuits."""
     try:
         db = get_db()
@@ -311,7 +322,8 @@ def saude_completa():
                 "tables": table_counts,
             }
         except Exception as e:
-            resultado["database"] = {"status": "error", "message": str(e)}
+            log.error("Erro database saude-completa: %s", e, exc_info=True)
+            resultado["database"] = {"status": "error", "message": "Erro ao acessar banco de dados"}
 
         # 2. Scheduler
         try:
@@ -322,7 +334,8 @@ def saude_completa():
             else:
                 resultado["scheduler"] = {"status": "stopped"}
         except Exception as e:
-            resultado["scheduler"] = {"status": "unknown", "message": str(e)}
+            log.error("Erro scheduler saude-completa: %s", e, exc_info=True)
+            resultado["scheduler"] = {"status": "unknown", "message": "Erro ao verificar scheduler"}
 
         # 3. Uptime
         try:
@@ -340,7 +353,8 @@ def saude_completa():
                 "total_errors": m.total_errors,
             }
         except Exception as e:
-            resultado["metrics"] = {"status": "error", "message": str(e)}
+            log.error("Erro metrics saude-completa: %s", e, exc_info=True)
+            resultado["metrics"] = {"status": "error", "message": "Erro ao obter metricas"}
 
         # 5. Circuit Breakers
         try:
@@ -350,7 +364,8 @@ def saude_completa():
                 name: cb.get_status() for name, cb in circuits.items()
             }
         except Exception as e:
-            resultado["circuits"] = {"status": "error", "message": str(e)}
+            log.error("Erro circuits saude-completa: %s", e, exc_info=True)
+            resultado["circuits"] = {"status": "error", "message": "Erro ao verificar circuit breakers"}
 
         # 6. Contagens rapidas
         try:
@@ -362,9 +377,10 @@ def saude_completa():
                 "erros_abertos": db.conn.execute("SELECT COUNT(*) as c FROM system_errors WHERE status='aberto'").fetchone()["c"],
             }
         except Exception as e:
-            resultado["contagens"] = {"status": "error", "message": str(e)}
+            log.error("Erro contagens saude-completa: %s", e, exc_info=True)
+            resultado["contagens"] = {"status": "error", "message": "Erro ao obter contagens"}
 
         return {"status": "success", **resultado}
     except Exception as e:
-        log.error("Erro saude-completa: %s", e)
-        return {"status": "error", "message": str(e)}
+        log.error("Erro saude-completa: %s", e, exc_info=True)
+        return {"status": "error", "message": "Erro interno do servidor"}

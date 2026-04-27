@@ -10,11 +10,13 @@ import logging
 import time
 from typing import Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import Request, APIRouter, Depends, HTTPException, Query
 
 from djen.api.schemas import BuscaDjenRequest, BuscaResponse, PublicacaoResponse
 from djen.api.database import Database
 from djen.sources.djen_source import DjenSource
+from djen.api.auth import get_current_user, UserInDB
+from djen.api.ratelimit import limiter
 
 log = logging.getLogger("captacao.djen")
 router = APIRouter(prefix="/api/djen", tags=["DJEN"])
@@ -40,7 +42,8 @@ def _to_response(pub) -> PublicacaoResponse:
 
 
 @router.post("/buscar", response_model=BuscaResponse, summary="Busca geral no DJEN")
-def buscar_djen(req: BuscaDjenRequest):
+@limiter.limit("30/minute")
+def buscar_djen(request: Request, req: BuscaDjenRequest, current_user: UserInDB = Depends(get_current_user)):
     """
     Busca comunicacoes processuais no DJEN (CNJ).
     Retorna TEXTO COMPLETO de intimacoes, citacoes e editais.
@@ -83,12 +86,13 @@ def buscar_djen(req: BuscaDjenRequest):
         )
     except Exception as e:
         elapsed_ms = int((time.time() - t0) * 1000)
-        log.error("[DJEN] Erro na busca: %s", e)
-        raise HTTPException(status_code=502, detail=f"Erro ao consultar DJEN: {e}")
+        log.error("[DJEN] Erro na busca: %s", e, exc_info=True)
+        raise HTTPException(status_code=502, detail="Erro ao consultar servico externo")
 
 
 @router.get("/processo/{numero}", response_model=BuscaResponse, summary="Buscar comunicacoes de um processo")
-def buscar_por_processo(numero: str):
+@limiter.limit("60/minute")
+def buscar_por_processo(request: Request, numero: str, current_user: UserInDB = Depends(get_current_user)):
     """Busca todas as comunicacoes (intimacoes/citacoes) de um processo no DJEN."""
     source = get_source()
     db = get_db()
@@ -111,16 +115,17 @@ def buscar_por_processo(numero: str):
             resultados=[_to_response(r) for r in resultados],
         )
     except Exception as e:
-        log.error("[DJEN] Erro ao buscar processo %s: %s", numero, e)
-        raise HTTPException(status_code=502, detail=str(e))
+        log.error("[DJEN] Erro ao buscar processo %s: %s", numero, e, exc_info=True)
+        raise HTTPException(status_code=502, detail="Erro ao consultar servico externo")
 
 
 @router.get("/oab/{numero}/{uf}", response_model=BuscaResponse, summary="Buscar por OAB")
-def buscar_por_oab(
-    numero: str,
+@limiter.limit("60/minute")
+def buscar_por_oab(request: Request, numero: str,
     uf: str,
     data_inicio: Optional[str] = Query(None, description="DD/MM/AAAA"),
     data_fim: Optional[str] = Query(None, description="DD/MM/AAAA"),
+    current_user: UserInDB = Depends(get_current_user),
 ):
     """Busca comunicacoes destinadas a um advogado pela OAB."""
     source = get_source()
@@ -144,16 +149,17 @@ def buscar_por_oab(
             resultados=[_to_response(r) for r in resultados],
         )
     except Exception as e:
-        log.error("[DJEN] Erro ao buscar OAB %s/%s: %s", numero, uf, e)
-        raise HTTPException(status_code=502, detail=str(e))
+        log.error("[DJEN] Erro ao buscar OAB %s/%s: %s", numero, uf, e, exc_info=True)
+        raise HTTPException(status_code=502, detail="Erro ao consultar servico externo")
 
 
 @router.get("/advogado/{nome}", response_model=BuscaResponse, summary="Buscar por nome de advogado")
-def buscar_por_advogado(
-    nome: str,
+@limiter.limit("60/minute")
+def buscar_por_advogado(request: Request, nome: str,
     tribunal: Optional[str] = Query(None),
     data_inicio: Optional[str] = Query(None),
     data_fim: Optional[str] = Query(None),
+    current_user: UserInDB = Depends(get_current_user),
 ):
     """Busca comunicacoes por nome de advogado."""
     source = get_source()
@@ -174,15 +180,17 @@ def buscar_por_advogado(
             resultados=[_to_response(r) for r in resultados],
         )
     except Exception as e:
-        raise HTTPException(status_code=502, detail=str(e))
+        log.error("[DJEN] Erro ao buscar advogado %s: %s", nome, e, exc_info=True)
+        raise HTTPException(status_code=502, detail="Erro ao consultar servico externo")
 
 
 @router.get("/parte/{nome}", response_model=BuscaResponse, summary="Buscar por nome de parte")
-def buscar_por_parte(
-    nome: str,
+@limiter.limit("60/minute")
+def buscar_por_parte(request: Request, nome: str,
     tribunal: Optional[str] = Query(None),
     data_inicio: Optional[str] = Query(None),
     data_fim: Optional[str] = Query(None),
+    current_user: UserInDB = Depends(get_current_user),
 ):
     """Busca comunicacoes por nome de parte processual."""
     source = get_source()
@@ -203,18 +211,21 @@ def buscar_por_parte(
             resultados=[_to_response(r) for r in resultados],
         )
     except Exception as e:
-        raise HTTPException(status_code=502, detail=str(e))
+        log.error("[DJEN] Erro ao buscar parte %s: %s", nome, e, exc_info=True)
+        raise HTTPException(status_code=502, detail="Erro ao consultar servico externo")
 
 
 @router.get("/tribunais", summary="Listar tribunais do DJEN")
-def listar_tribunais():
+@limiter.limit("60/minute")
+def listar_tribunais(request: Request, current_user: UserInDB = Depends(get_current_user)):
     source = get_source()
     tribunais = source.listar_tribunais()
     return {"tribunais": tribunais, "total": len(tribunais)}
 
 
 @router.get("/health", summary="Health check DJEN")
-def health_check_djen():
+@limiter.limit("60/minute")
+def health_check_djen(request: Request):
     source = get_source()
     db = get_db()
     result = source.health_check()

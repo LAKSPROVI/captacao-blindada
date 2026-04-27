@@ -1,17 +1,20 @@
-from fastapi import APIRouter, HTTPException, Depends
+from fastapi import Request, APIRouter, HTTPException, Depends
 from typing import List, Dict, Optional
 from pydantic import BaseModel
-from djen.api.database import Database
+from djen.api.database import get_database
+from djen.api.auth import get_current_user, UserInDB
+import logging
 import os
+from djen.api.ratelimit import limiter
+
+log = logging.getLogger("captacao.ai_config")
 
 router = APIRouter(prefix="/ai", tags=["IA & Modelos"])
-db = Database()
 
-# Chave padrão do sistema (Gemini)
-DEFAULT_GEMINI_KEY = os.environ.get(
-    "GEMINI_API_KEY",
-    "AIzaSyDrrhzfj5U_E4Ez_bcjGrSFPqQ3lmQLKGY"
-)
+# Chave do sistema (Gemini) - OBRIGATÓRIO configurar via env
+DEFAULT_GEMINI_KEY = os.environ.get("GEMINI_API_KEY", "")
+if not DEFAULT_GEMINI_KEY:
+    log.warning("GEMINI_API_KEY nao configurada! Funcoes de IA estarao indisponiveis.")
 
 # Modelos testados e funcionando
 GEMINI_MODELS = [
@@ -85,26 +88,30 @@ class AIConfigUpdate(BaseModel):
     enabled: bool = True
 
 @router.get("/config", response_model=List[AIConfigSchema])
-async def list_ai_configs():
+@limiter.limit("60/minute")
+async def list_ai_configs(request: Request):
     """Lista todas as configuracoes de IA por funcao."""
     try:
-        return db.listar_ai_configs()
+        return get_database().listar_ai_configs()
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        log.error("Erro ao listar configs IA: %s", e, exc_info=True)
+        raise HTTPException(status_code=500, detail="Erro interno do servidor")
 
 @router.get("/config/{function_key}", response_model=AIConfigSchema)
-async def get_ai_config(function_key: str):
+@limiter.limit("60/minute")
+async def get_ai_config(request: Request, function_key: str):
     """Obtem configuracao de IA para uma funcao especifica."""
-    config = db.obter_ai_config(function_key)
+    config = get_database().obter_ai_config(function_key)
     if not config:
         raise HTTPException(status_code=404, detail="Funcao de IA nao encontrada")
     return config
 
 @router.put("/config/{function_key}")
-async def update_ai_config(function_key: str, data: AIConfigUpdate):
+@limiter.limit("30/minute")
+async def update_ai_config(request: Request, function_key: str, data: AIConfigUpdate):
     """Atualiza a configuracao de IA para uma funcao."""
     try:
-        success = db.salvar_ai_config(
+        success = get_database().salvar_ai_config(
             function_key=function_key,
             provider=data.provider,
             model_name=data.model_name,
@@ -115,11 +122,15 @@ async def update_ai_config(function_key: str, data: AIConfigUpdate):
         if not success:
             raise HTTPException(status_code=400, detail="Falha ao atualizar configuracao")
         return {"status": "success", "message": f"Configuracao de {function_key} atualizada"}
+    except HTTPException:
+        raise
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        log.error("Erro ao atualizar config IA %s: %s", function_key, e, exc_info=True)
+        raise HTTPException(status_code=500, detail="Erro interno do servidor")
 
 @router.get("/models")
-async def list_available_models():
+@limiter.limit("60/minute")
+async def list_available_models(request: Request):
     """Retorna lista de modelos disponíveis e testados."""
     return {
         "providers": [
@@ -134,7 +145,8 @@ async def list_available_models():
     }
 
 @router.get("/functions")
-async def list_ai_functions():
+@limiter.limit("60/minute")
+async def list_ai_functions(request: Request):
     """Retorna lista de funções do sistema que usam IA com descrições."""
     return {
         "functions": [
@@ -150,7 +162,8 @@ async def list_ai_functions():
     }
 
 @router.post("/test")
-async def test_ai_config(data: AIConfigUpdate):
+@limiter.limit("5/minute")
+async def test_ai_config(request: Request, data: AIConfigUpdate):
     """Testa uma configuracao sem salvar no banco."""
     try:
         from djen.agents.ml_agents import LLMClient
@@ -176,7 +189,8 @@ async def test_ai_config(data: AIConfigUpdate):
                 "response": response
             }
     except Exception as e:
-        return {"status": "error", "message": f"Erro na conexao: {str(e)}"}
+        log.error("Erro ao testar config IA: %s", e, exc_info=True)
+        return {"status": "error", "message": "Erro na conexao com o servico de IA"}
 
 
 # =============================================================================
@@ -184,34 +198,20 @@ async def test_ai_config(data: AIConfigUpdate):
 # =============================================================================
 
 @router.get("/logs", summary="Log de chamadas à IA")
-async def listar_ia_logs(limite: int = 50):
+@limiter.limit("60/minute")
+async def listar_ia_logs(request: Request, limite: int = 50):
     """Lista log de chamadas à IA."""
-    _db = Database()
-    try:
-        _db.conn.execute("""
-            CREATE TABLE IF NOT EXISTS ia_logs (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                function_key TEXT,
-                model TEXT,
-                input_tokens INTEGER DEFAULT 0,
-                output_tokens INTEGER DEFAULT 0,
-                duration_ms INTEGER DEFAULT 0,
-                status TEXT DEFAULT 'ok',
-                error TEXT,
-                criado_em TEXT DEFAULT (datetime('now', 'localtime'))
-            )
-        """)
-        _db.conn.commit()
-    except Exception:
-        pass
+    _db = get_database()
+    # Tabela ia_logs criada em _init_schema
     rows = _db.conn.execute("SELECT * FROM ia_logs ORDER BY id DESC LIMIT ?", (limite,)).fetchall()
     return {"status": "success", "total": len(rows), "logs": [dict(r) for r in rows]}
 
 
 @router.get("/logs/stats", summary="Estatísticas de uso da IA")
-async def ia_stats():
+@limiter.limit("60/minute")
+async def ia_stats(request: Request):
     """Estatísticas de uso da IA."""
-    _db = Database()
+    _db = get_database()
     try:
         total = _db.conn.execute("SELECT COUNT(*) as c FROM ia_logs").fetchone()["c"]
         tokens_in = _db.conn.execute("SELECT COALESCE(SUM(input_tokens),0) as t FROM ia_logs").fetchone()["t"]
@@ -230,7 +230,8 @@ async def ia_stats():
 
 
 @router.get("/fallback-config", summary="Configuração de fallback entre modelos")
-async def get_fallback_config():
+@limiter.limit("60/minute")
+async def get_fallback_config(request: Request):
     """Retorna cadeia de fallback entre modelos."""
     return {
         "status": "success",

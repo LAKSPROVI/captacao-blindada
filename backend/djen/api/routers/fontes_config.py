@@ -6,8 +6,10 @@ import logging
 import os
 from typing import Optional
 
-from fastapi import APIRouter, Query, Body
+from fastapi import Request, APIRouter, Depends, Query, Body
 from pydantic import BaseModel
+from djen.api.auth import get_current_user, UserInDB
+from djen.api.ratelimit import limiter
 
 log = logging.getLogger("captacao.fontes_config")
 router = APIRouter(prefix="/api/fontes", tags=["Fontes de Dados"])
@@ -101,7 +103,8 @@ FONTES_DISPONIVEIS = {
 
 
 @router.get("/disponiveis", summary="Listar fontes disponíveis")
-def listar_fontes():
+@limiter.limit("60/minute")
+def listar_fontes(request: Request):
     """Lista todas as fontes de dados disponíveis e seu status."""
     fontes = []
     for key, info in FONTES_DISPONIVEIS.items():
@@ -125,7 +128,8 @@ def listar_fontes():
 
 
 @router.get("/{fonte_id}", summary="Detalhes de uma fonte")
-def detalhe_fonte(fonte_id: str):
+@limiter.limit("60/minute")
+def detalhe_fonte(request: Request, fonte_id: str):
     """Retorna detalhes de uma fonte específica."""
     if fonte_id not in FONTES_DISPONIVEIS:
         from fastapi import HTTPException
@@ -140,7 +144,8 @@ def detalhe_fonte(fonte_id: str):
 
 
 @router.get("/ativas/status", summary="Status das fontes ativas")
-def status_fontes_ativas():
+@limiter.limit("60/minute")
+def status_fontes_ativas(request: Request):
     """Verifica status de conectividade das fontes ativas."""
     import time
     resultados = []

@@ -1,0 +1,14 @@
+.git
+.env
+.env.*
+!.env.example
+node_modules
+__pycache__
+*.pyc
+.pytest_cache
+.next
+dist
+*.db
+*.sqlite
+.vscode
+.idea

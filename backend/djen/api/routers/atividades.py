@@ -6,10 +6,12 @@ import logging
 from datetime import datetime, date
 from typing import Optional
 
-from fastapi import APIRouter, Query
+from fastapi import Request, APIRouter, Depends, Query
 from fastapi.responses import HTMLResponse
 
 from djen.api.database import Database
+from djen.api.auth import get_current_user, UserInDB
+from djen.api.ratelimit import limiter
 
 log = logging.getLogger("captacao.atividades")
 router = APIRouter(prefix="/api/atividades", tags=["Atividades"])
@@ -21,7 +23,8 @@ def get_db() -> Database:
 
 
 @router.get("/usuario/{user_id}", summary="Atividades de um usuário")
-def atividades_usuario(user_id: int, limite: int = Query(50, ge=1, le=500)):
+@limiter.limit("60/minute")
+def atividades_usuario(request: Request, user_id: int, limite: int = Query(50, ge=1, le=500)):
     """Lista atividades recentes de um usuário específico."""
     db = get_db()
     rows = db.conn.execute(
@@ -32,7 +35,8 @@ def atividades_usuario(user_id: int, limite: int = Query(50, ge=1, le=500)):
 
 
 @router.get("/recentes", summary="Atividades recentes do sistema")
-def atividades_recentes(limite: int = Query(50, ge=1, le=500)):
+@limiter.limit("60/minute")
+def atividades_recentes(request: Request, limite: int = Query(50, ge=1, le=500)):
     """Lista atividades recentes de todos os usuários."""
     db = get_db()
     rows = db.conn.execute("SELECT * FROM audit_logs ORDER BY id DESC LIMIT ?", (limite,)).fetchall()
@@ -40,7 +44,8 @@ def atividades_recentes(limite: int = Query(50, ge=1, le=500)):
 
 
 @router.get("/resumo-email", summary="Resumo em HTML para email")
-def resumo_email():
+@limiter.limit("60/minute")
+def resumo_email(request: Request):
     """Gera resumo do sistema em HTML para envio por email."""
     db = get_db()
     hoje = date.today().strftime("%d/%m/%Y")
@@ -127,7 +132,8 @@ def resumo_email():
 
 
 @router.get("/duplicatas", summary="Verificar publicações duplicadas")
-def verificar_duplicatas(limite: int = Query(50, ge=1, le=500)):
+@limiter.limit("60/minute")
+def verificar_duplicatas(request: Request, limite: int = Query(50, ge=1, le=500)):
     """Identifica publicações potencialmente duplicadas."""
     db = get_db()
     rows = db.conn.execute("""

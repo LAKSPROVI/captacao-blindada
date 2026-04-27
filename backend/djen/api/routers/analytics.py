@@ -3,9 +3,11 @@ Captacao Peticao Blindada - Analytics Router.
 Endpoints de analitica e estatisticas avancadas.
 """
 
-from fastapi import APIRouter, Query
+from fastapi import Request, APIRouter, Depends, Query
 from djen.api.database import Database
+from djen.api.auth import get_current_user, UserInDB
 import logging
+from djen.api.ratelimit import limiter
 
 log = logging.getLogger("captacao.analytics")
 router = APIRouter(prefix="/api/analytics", tags=["Analytics"])
@@ -21,7 +23,8 @@ def get_db() -> Database:
 # =========================================================================
 
 @router.get("/publicacoes-por-dia")
-def publicacoes_por_dia(dias: int = Query(30, ge=1, le=365)):
+@limiter.limit("60/minute")
+def publicacoes_por_dia(request: Request, dias: int = Query(30, ge=1, le=365)):
     """Contagem de publicacoes por dia nos ultimos N dias."""
     try:
         db = get_db()
@@ -36,7 +39,7 @@ def publicacoes_por_dia(dias: int = Query(30, ge=1, le=365)):
         return {"status": "success", "dias": dias, "data": data}
     except Exception as e:
         log.error("Erro publicacoes-por-dia: %s", e)
-        return {"status": "error", "message": str(e), "data": []}
+        return {"status": "error", "message": "Erro ao acessar banco de dados", "data": []}
 
 
 # =========================================================================
@@ -44,7 +47,8 @@ def publicacoes_por_dia(dias: int = Query(30, ge=1, le=365)):
 # =========================================================================
 
 @router.get("/publicacoes-por-tribunal")
-def publicacoes_por_tribunal():
+@limiter.limit("60/minute")
+def publicacoes_por_tribunal(request: Request):
     """Contagem de publicacoes agrupadas por tribunal."""
     try:
         db = get_db()
@@ -58,7 +62,7 @@ def publicacoes_por_tribunal():
         return {"status": "success", "data": data}
     except Exception as e:
         log.error("Erro publicacoes-por-tribunal: %s", e)
-        return {"status": "error", "message": str(e), "data": []}
+        return {"status": "error", "message": "Erro ao acessar banco de dados", "data": []}
 
 
 # =========================================================================
@@ -66,7 +70,8 @@ def publicacoes_por_tribunal():
 # =========================================================================
 
 @router.get("/execucoes-por-status")
-def execucoes_por_status():
+@limiter.limit("60/minute")
+def execucoes_por_status(request: Request):
     """Contagem de execucoes de captacao agrupadas por status."""
     try:
         db = get_db()
@@ -80,7 +85,7 @@ def execucoes_por_status():
         return {"status": "success", "data": data}
     except Exception as e:
         log.error("Erro execucoes-por-status: %s", e)
-        return {"status": "error", "message": str(e), "data": []}
+        return {"status": "error", "message": "Erro ao acessar banco de dados", "data": []}
 
 
 # =========================================================================
@@ -88,7 +93,8 @@ def execucoes_por_status():
 # =========================================================================
 
 @router.get("/tempo-medio-execucao")
-def tempo_medio_execucao():
+@limiter.limit("60/minute")
+def tempo_medio_execucao(request: Request):
     """Tempo medio de execucao (ms) por captacao."""
     try:
         db = get_db()
@@ -120,7 +126,7 @@ def tempo_medio_execucao():
         return {"status": "success", "data": data}
     except Exception as e:
         log.error("Erro tempo-medio-execucao: %s", e)
-        return {"status": "error", "message": str(e), "data": []}
+        return {"status": "error", "message": "Erro ao acessar banco de dados", "data": []}
 
 
 # =========================================================================
@@ -128,7 +134,8 @@ def tempo_medio_execucao():
 # =========================================================================
 
 @router.get("/taxa-novos")
-def taxa_novos(dias: int = Query(30, ge=1, le=365)):
+@limiter.limit("60/minute")
+def taxa_novos(request: Request, dias: int = Query(30, ge=1, le=365)):
     """Taxa de novos resultados por dia nos ultimos N dias."""
     try:
         db = get_db()
@@ -152,7 +159,7 @@ def taxa_novos(dias: int = Query(30, ge=1, le=365)):
         return {"status": "success", "dias": dias, "data": data}
     except Exception as e:
         log.error("Erro taxa-novos: %s", e)
-        return {"status": "error", "message": str(e), "data": []}
+        return {"status": "error", "message": "Erro ao acessar banco de dados", "data": []}
 
 
 # =========================================================================
@@ -160,7 +167,8 @@ def taxa_novos(dias: int = Query(30, ge=1, le=365)):
 # =========================================================================
 
 @router.get("/horas-pico")
-def horas_pico():
+@limiter.limit("60/minute")
+def horas_pico(request: Request):
     """Distribuicao de execucoes por hora do dia."""
     try:
         db = get_db()
@@ -176,7 +184,7 @@ def horas_pico():
         return {"status": "success", "data": data}
     except Exception as e:
         log.error("Erro horas-pico: %s", e)
-        return {"status": "error", "message": str(e), "data": []}
+        return {"status": "error", "message": "Erro ao acessar banco de dados", "data": []}
 
 
 # =========================================================================
@@ -184,7 +192,8 @@ def horas_pico():
 # =========================================================================
 
 @router.get("/resumo-mensal")
-def resumo_mensal(meses: int = Query(6, ge=1, le=24)):
+@limiter.limit("60/minute")
+def resumo_mensal(request: Request, meses: int = Query(6, ge=1, le=24)):
     """Resumo mensal: execucoes, novos resultados e erros."""
     try:
         db = get_db()
@@ -215,4 +224,4 @@ def resumo_mensal(meses: int = Query(6, ge=1, le=24)):
         return {"status": "success", "meses": meses, "data": data}
     except Exception as e:
         log.error("Erro resumo-mensal: %s", e)
-        return {"status": "error", "message": str(e), "data": []}
+        return {"status": "error", "message": "Erro ao acessar banco de dados", "data": []}

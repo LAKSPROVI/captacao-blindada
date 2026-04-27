@@ -7,10 +7,12 @@ import json
 from datetime import datetime, date
 from typing import Optional
 
-from fastapi import APIRouter, Query, Body
+from fastapi import Request, APIRouter, Depends, Query, Body
 from pydantic import BaseModel
 
 from djen.api.database import Database
+from djen.api.auth import get_current_user, UserInDB
+from djen.api.ratelimit import limiter
 
 log = logging.getLogger("captacao.automacoes")
 router = APIRouter(prefix="/api/automacoes", tags=["Automacoes"])
@@ -21,24 +23,6 @@ def get_db() -> Database:
     return get_database()
 
 
-def _ensure_tables(db):
-    try:
-        db.conn.execute("""
-            CREATE TABLE IF NOT EXISTS automacao_regras (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                nome TEXT NOT NULL,
-                tipo TEXT NOT NULL,
-                condicao TEXT NOT NULL,
-                acao TEXT NOT NULL,
-                ativo INTEGER DEFAULT 1,
-                criado_em TEXT DEFAULT (datetime('now', 'localtime'))
-            )
-        """)
-        db.conn.commit()
-    except Exception:
-        pass
-
-
 class RegraRequest(BaseModel):
     nome: str
     tipo: str  # alerta_prazo, alerta_erro, notificacao_nova_pub, auto_classificar
@@ -47,9 +31,9 @@ class RegraRequest(BaseModel):
 
 
 @router.post("/regras", summary="Criar regra de automação")
-def criar_regra(req: RegraRequest):
+@limiter.limit("30/minute")
+def criar_regra(request: Request, req: RegraRequest):
     db = get_db()
-    _ensure_tables(db)
     cur = db.conn.execute(
         "INSERT INTO automacao_regras (nome, tipo, condicao, acao) VALUES (?, ?, ?, ?)",
         (req.nome, req.tipo, req.condicao, req.acao)
@@ -59,9 +43,9 @@ def criar_regra(req: RegraRequest):
 
 
 @router.get("/regras", summary="Listar regras de automação")
-def listar_regras(ativo: Optional[bool] = Query(None)):
+@limiter.limit("60/minute")
+def listar_regras(request: Request, ativo: Optional[bool] = Query(None)):
     db = get_db()
-    _ensure_tables(db)
     if ativo is not None:
         rows = db.conn.execute("SELECT * FROM automacao_regras WHERE ativo = ? ORDER BY id DESC", (1 if ativo else 0,)).fetchall()
     else:
@@ -70,9 +54,10 @@ def listar_regras(ativo: Optional[bool] = Query(None)):
 
 
 @router.put("/regras/{regra_id}/toggle", summary="Ativar/desativar regra")
-def toggle_regra(regra_id: int):
+@limiter.limit("30/minute")
+def toggle_regra(request: Request, regra_id: int):
     db = get_db()
-    _ensure_tables(db)
+
     row = db.conn.execute("SELECT ativo FROM automacao_regras WHERE id = ?", (regra_id,)).fetchone()
     if not row:
         from fastapi import HTTPException
@@ -84,9 +69,9 @@ def toggle_regra(regra_id: int):
 
 
 @router.delete("/regras/{regra_id}", summary="Remover regra")
-def remover_regra(regra_id: int):
+@limiter.limit("30/minute")
+def remover_regra(request: Request, regra_id: int):
     db = get_db()
-    _ensure_tables(db)
     db.conn.execute("DELETE FROM automacao_regras WHERE id = ?", (regra_id,))
     db.conn.commit()
     return {"status": "success"}
@@ -97,10 +82,9 @@ def remover_regra(regra_id: int):
 # =============================================================================
 
 @router.get("/resumo", summary="Resumo de automações")
-def resumo_automacoes():
+@limiter.limit("60/minute")
+def resumo_automacoes(request: Request):
     db = get_db()
-    _ensure_tables(db)
-    
     total = db.conn.execute("SELECT COUNT(*) as c FROM automacao_regras").fetchone()["c"]
     ativas = db.conn.execute("SELECT COUNT(*) as c FROM automacao_regras WHERE ativo = 1").fetchone()["c"]
     
@@ -141,23 +125,9 @@ def resumo_automacoes():
 # =============================================================================
 
 @router.get("/historico", summary="Histórico de automações executadas")
-def historico_automacoes(limite: int = Query(50, ge=1, le=500)):
+@limiter.limit("60/minute")
+def historico_automacoes(request: Request, limite: int = Query(50, ge=1, le=500)):
     db = get_db()
-    try:
-        rows = db.conn.execute("""
-            CREATE TABLE IF NOT EXISTS automacao_historico (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                regra_id INTEGER,
-                tipo TEXT,
-                resultado TEXT,
-                detalhes TEXT,
-                criado_em TEXT DEFAULT (datetime('now', 'localtime'))
-            )
-        """)
-        db.conn.commit()
-    except Exception:
-        pass
-    
     try:
         rows = db.conn.execute("SELECT * FROM automacao_historico ORDER BY id DESC LIMIT ?", (limite,)).fetchall()
         return {"status": "success", "total": len(rows), "historico": [dict(r) for r in rows]}

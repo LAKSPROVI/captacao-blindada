@@ -12,7 +12,7 @@ from datetime import datetime, timedelta
 from functools import lru_cache
 from typing import Optional, List, Dict, Any
 
-from fastapi import APIRouter, HTTPException, Query, WebSocket, WebSocketDisconnect, Request
+from fastapi import APIRouter, Depends, HTTPException, Query, WebSocket, WebSocketDisconnect, Request
 from pydantic import BaseModel, Field
 
 from djen.api.schemas import (
@@ -25,18 +25,10 @@ from djen.api.schemas import (
     PublicacaoResponse,
     DiffResponse,
 )
-
-from djen.api.schemas import (
-    CaptacaoCreateRequest,
-    CaptacaoUpdateRequest,
-    CaptacaoPreviewRequest,
-    CaptacaoResponse,
-    ExecucaoCaptacaoResponse,
-    CaptacaoStatsResponse,
-    PublicacaoResponse,
-    DiffResponse,
-)
 from djen.api.ratelimit import limiter
+from djen.api.auth import get_current_user, UserInDB
+
+from starlette.requests import Request
 
 log = logging.getLogger("captacao.api.captacao")
 
@@ -88,19 +80,27 @@ def _is_cache_valid(filters_key: str) -> bool:
             now - _captacao_list_cache["timestamp"] < CACHE_TTL_SECONDS)
 
 
+def _tid(user: UserInDB) -> Optional[int]:
+    """Retorna tenant_id para filtragem. Master ve tudo (None)."""
+    return None if user.role == "master" else user.tenant_id
+
+
 # =========================================================================
 # Rotas fixas (antes das parametrizadas)
 # =========================================================================
 
 @router.get("/stats", summary="Estatisticas de captacao")
-def stats_captacao():
+@limiter.limit("60/minute")
+def stats_captacao(request: Request, current_user: UserInDB = Depends(get_current_user)):
     """Retorna estatisticas gerais das captacoes."""
     db = get_db()
-    return db.obter_stats_captacao()
+    return db.obter_stats_captacao(tenant_id=_tid(current_user))
 
 
 @router.get("/listar", summary="Listar captacoes")
+@limiter.limit("60/minute")
 def listar_captacoes(
+    request: Request,
     ativo: Optional[bool] = Query(None, description="Filtrar por ativo/inativo"),
     tipo_busca: Optional[str] = Query(None, description="Filtrar por tipo"),
     prioridade: Optional[str] = Query(None, description="Filtrar por prioridade"),
@@ -108,13 +108,15 @@ def listar_captacoes(
     limit: int = Query(DEFAULT_LIMIT, ge=1, le=MAX_LIMIT, description="Limite de resultados"),
     offset: int = Query(0, ge=0, description="Offset para paginacao"),
     no_cache: bool = Query(False, description="Ignorar cache"),
+    current_user: UserInDB = Depends(get_current_user),
 ):
     """Lista todas as captacoes configuradas com cache em memória."""
     db = get_db()
+    tid = None if current_user.role == "master" else current_user.tenant_id
     filters_key = _get_filter_key(ativo, tipo_busca, prioridade)
     
     if no_cache or not _is_cache_valid(filters_key):
-        captacoes = db.listar_captacoes(ativo=ativo, tipo_busca=tipo_busca, prioridade=prioridade)
+        captacoes = db.listar_captacoes(ativo=ativo, tipo_busca=tipo_busca, prioridade=prioridade, tenant_id=tid)
         _captacao_list_cache["data"] = captacoes
         _captacao_list_cache["filters"] = filters_key
         _captacao_list_cache["timestamp"] = time.time()
@@ -143,7 +145,8 @@ def listar_captacoes(
 
 
 @router.post("/criar", summary="Criar nova captacao")
-def criar_captacao(req: CaptacaoCreateRequest):
+@limiter.limit("30/minute")
+def criar_captacao(request: Request, req: CaptacaoCreateRequest, current_user: UserInDB = Depends(get_current_user)):
     """
     Cria uma nova captacao automatizada com parametros de busca.
 
@@ -189,6 +192,7 @@ def criar_captacao(req: CaptacaoCreateRequest):
         notificar_whatsapp=req.notificar_whatsapp,
         notificar_email=req.notificar_email,
         prioridade=prioridade_str,
+        tenant_id=current_user.tenant_id,
     )
     if not captacao_id:
         raise HTTPException(status_code=500, detail="Erro ao criar captacao")
@@ -200,7 +204,8 @@ def criar_captacao(req: CaptacaoCreateRequest):
 
 
 @router.post("/preview", summary="Testar parametros de busca (dry-run)")
-def preview_captacao(req: CaptacaoPreviewRequest):
+@limiter.limit("30/minute")
+def preview_captacao(request: Request, req: CaptacaoPreviewRequest):
     """
     Executa busca SEM salvar resultados. Util para testar
     parametros antes de criar uma captacao agendada.
@@ -210,7 +215,8 @@ def preview_captacao(req: CaptacaoPreviewRequest):
 
 
 @router.post("/{captacao_id}/clonar", summary="Clonar captacao existente")
-def clonar_captacao(captacao_id: int):
+@limiter.limit("30/minute")
+def clonar_captacao(request: Request, captacao_id: int, current_user: UserInDB = Depends(get_current_user)):
     """Cria uma cópia da captação com nome 'Cópia de ...'."""
     db = get_db()
     cap = db.obter_captacao(captacao_id)
@@ -245,17 +251,17 @@ def clonar_captacao(captacao_id: int):
         auto_enriquecer=cap.get("auto_enriquecer", 1),
         notificar_whatsapp=cap.get("notificar_whatsapp", 0),
         notificar_email=cap.get("notificar_email", 0),
-        tenant_id=cap.get("tenant_id", 1),
+        tenant_id=current_user.tenant_id,
     )
     return {"status": "success", "message": f"Captacao clonada: {novo_nome}", "novo_id": novo_id}
 
 
 @router.post("/executar-todas", summary="Executar todas as captacoes pendentes")
 @limiter.limit("5/minute")
-def executar_todas(request: Request):
+def executar_todas(request: Request, current_user: UserInDB = Depends(get_current_user)):
     """Executa todas as captacoes ativas cujo horario/dia permite."""
     service = get_service()
-    return service.executar_todas()
+    return service.executar_todas(tenant_id=_tid(current_user))
 
 
 # =========================================================================
@@ -263,47 +269,91 @@ def executar_todas(request: Request):
 # =========================================================================
 
 @router.get("/resumo", summary="Relatorio compacto do sistema")
-def relatorio_sistema():
+@limiter.limit("60/minute")
+def relatorio_sistema(request: Request, current_user: UserInDB = Depends(get_current_user)):
     """
     Relatorio discreto para acompanhamento do sistema.
     Retorna apenas numeros essenciais para verificacao rapida.
     """
     db = get_db()
+    tid = _tid(current_user)
     
-    stats_gerais = db.obter_stats_captacao()
+    stats_gerais = db.obter_stats_captacao(tenant_id=tid)
     
-    captacoes_ativas = db.conn.execute(
-        "SELECT COUNT(*) as c FROM captacoes WHERE ativo = 1"
-    ).fetchone()["c"]
+    if tid:
+        captacoes_ativas = db.conn.execute(
+            "SELECT COUNT(*) as c FROM captacoes WHERE ativo = 1 AND tenant_id = ?", (tid,)
+        ).fetchone()["c"]
+    else:
+        captacoes_ativas = db.conn.execute(
+            "SELECT COUNT(*) as c FROM captacoes WHERE ativo = 1"
+        ).fetchone()["c"]
     
-    execucoes_hoje = db.conn.execute(
-        """SELECT COUNT(*) as c FROM execucoes_captacao 
-           WHERE date(inicio) = date('now') AND status = 'completed'"""
-    ).fetchone()["c"]
-    
-    resultados_hoje = db.conn.execute(
-        """SELECT COALESCE(SUM(novos_resultados), 0) as t FROM execucoes_captacao 
-           WHERE date(inicio) = date('now')"""
-    ).fetchone()["t"]
-    
-    ultimas_execucoes = db.conn.execute(
-        """SELECT e.id, e.captacao_id, e.inicio, e.status, e.total_resultados, e.novos_resultados, c.nome
-           FROM execucoes_captacao e
-           JOIN captacoes c ON e.captacao_id = c.id
-           ORDER BY e.inicio DESC
-           LIMIT 10"""
-    ).fetchall()
-    
-    captacoes_problema = db.conn.execute(
-        """SELECT c.id, c.nome, c.ultima_execucao, c.total_execucoes, c.total_novos
-           FROM captacoes c
-           WHERE c.ativo = 1 AND (
-               c.ultima_execucao IS NULL OR 
-               c.ultima_execucao < datetime('now', '-24 hours')
-           )
-           ORDER BY c.ultima_execucao ASC
-           LIMIT 10"""
-    ).fetchall()
+    if tid:
+        execucoes_hoje = db.conn.execute(
+            """SELECT COUNT(*) as c FROM execucoes_captacao 
+               WHERE date(inicio) = date('now') AND status = 'completed'
+               AND captacao_id IN (SELECT id FROM captacoes WHERE tenant_id = ?)""",
+            (tid,)
+        ).fetchone()["c"]
+        
+        resultados_hoje = db.conn.execute(
+            """SELECT COALESCE(SUM(novos_resultados), 0) as t FROM execucoes_captacao 
+               WHERE date(inicio) = date('now')
+               AND captacao_id IN (SELECT id FROM captacoes WHERE tenant_id = ?)""",
+            (tid,)
+        ).fetchone()["t"]
+        
+        ultimas_execucoes = db.conn.execute(
+            """SELECT e.id, e.captacao_id, e.inicio, e.status, e.total_resultados, e.novos_resultados, c.nome
+               FROM execucoes_captacao e
+               JOIN captacoes c ON e.captacao_id = c.id
+               WHERE c.tenant_id = ?
+               ORDER BY e.inicio DESC
+               LIMIT 10""",
+            (tid,)
+        ).fetchall()
+        
+        captacoes_problema = db.conn.execute(
+            """SELECT c.id, c.nome, c.ultima_execucao, c.total_execucoes, c.total_novos
+               FROM captacoes c
+               WHERE c.ativo = 1 AND c.tenant_id = ? AND (
+                   c.ultima_execucao IS NULL OR 
+                   c.ultima_execucao < datetime('now', '-24 hours')
+               )
+               ORDER BY c.ultima_execucao ASC
+               LIMIT 10""",
+            (tid,)
+        ).fetchall()
+    else:
+        execucoes_hoje = db.conn.execute(
+            """SELECT COUNT(*) as c FROM execucoes_captacao 
+               WHERE date(inicio) = date('now') AND status = 'completed'"""
+        ).fetchone()["c"]
+        
+        resultados_hoje = db.conn.execute(
+            """SELECT COALESCE(SUM(novos_resultados), 0) as t FROM execucoes_captacao 
+               WHERE date(inicio) = date('now')"""
+        ).fetchone()["t"]
+        
+        ultimas_execucoes = db.conn.execute(
+            """SELECT e.id, e.captacao_id, e.inicio, e.status, e.total_resultados, e.novos_resultados, c.nome
+               FROM execucoes_captacao e
+               JOIN captacoes c ON e.captacao_id = c.id
+               ORDER BY e.inicio DESC
+               LIMIT 10"""
+        ).fetchall()
+        
+        captacoes_problema = db.conn.execute(
+            """SELECT c.id, c.nome, c.ultima_execucao, c.total_execucoes, c.total_novos
+               FROM captacoes c
+               WHERE c.ativo = 1 AND (
+                   c.ultima_execucao IS NULL OR 
+                   c.ultima_execucao < datetime('now', '-24 hours')
+               )
+               ORDER BY c.ultima_execucao ASC
+               LIMIT 10"""
+        ).fetchall()
     
     return {
         "data": datetime.now().isoformat(),
@@ -321,18 +371,24 @@ def relatorio_sistema():
 # =========================================================================
 
 @router.put("/{captacao_id}/notificacoes", summary="Configurar notificações da captação")
+@limiter.limit("30/minute")
 def configurar_notificacoes(
+    request: Request,
     captacao_id: int,
     notificar_email: bool = Query(False),
     notificar_whatsapp: bool = Query(False),
     email_destino: Optional[str] = Query(None),
     whatsapp_destino: Optional[str] = Query(None),
+    current_user: UserInDB = Depends(get_current_user),
 ):
     """Configura notificações para uma captação específica."""
     db = get_db()
     cap = db.obter_captacao(captacao_id)
     if not cap:
         raise HTTPException(status_code=404, detail="Captacao nao encontrada")
+    tid = _tid(current_user)
+    if tid and dict(cap).get("tenant_id") != tid:
+        raise HTTPException(status_code=403, detail="Acesso negado")
     
     db.conn.execute("""
         UPDATE captacoes SET notificar_email=?, notificar_whatsapp=? WHERE id=?
@@ -352,25 +408,45 @@ def configurar_notificacoes(
 # =========================================================================
 
 @router.get("/alertas/sem-resultados", summary="Captações sem resultados recentes")
-def alertas_sem_resultados(dias: int = Query(3, ge=1, le=30)):
+@limiter.limit("60/minute")
+def alertas_sem_resultados(request: Request, dias: int = Query(3, ge=1, le=30), current_user: UserInDB = Depends(get_current_user)):
     """Lista captações ativas que não encontraram novos resultados nos últimos X dias."""
     db = get_db()
-    rows = db.conn.execute("""
-        SELECT c.id, c.nome, c.tipo_busca, c.ultima_execucao, c.total_execucoes, c.total_novos,
-               (SELECT MAX(e.inicio) FROM execucoes_captacao e WHERE e.captacao_id = c.id AND e.novos_resultados > 0) as ultimo_novo
-        FROM captacoes c
-        WHERE c.ativo = 1
-        AND (
-            c.ultima_execucao IS NULL
-            OR NOT EXISTS (
-                SELECT 1 FROM execucoes_captacao e 
-                WHERE e.captacao_id = c.id 
-                AND e.novos_resultados > 0 
-                AND date(e.inicio) >= date('now', 'localtime', ? || ' days')
+    tid = _tid(current_user)
+    if tid:
+        rows = db.conn.execute("""
+            SELECT c.id, c.nome, c.tipo_busca, c.ultima_execucao, c.total_execucoes, c.total_novos,
+                   (SELECT MAX(e.inicio) FROM execucoes_captacao e WHERE e.captacao_id = c.id AND e.novos_resultados > 0) as ultimo_novo
+            FROM captacoes c
+            WHERE c.ativo = 1 AND c.tenant_id = ?
+            AND (
+                c.ultima_execucao IS NULL
+                OR NOT EXISTS (
+                    SELECT 1 FROM execucoes_captacao e 
+                    WHERE e.captacao_id = c.id 
+                    AND e.novos_resultados > 0 
+                    AND date(e.inicio) >= date('now', 'localtime', ? || ' days')
+                )
             )
-        )
-        ORDER BY c.ultima_execucao ASC
-    """, (f"-{dias}",)).fetchall()
+            ORDER BY c.ultima_execucao ASC
+        """, (tid, f"-{dias}")).fetchall()
+    else:
+        rows = db.conn.execute("""
+            SELECT c.id, c.nome, c.tipo_busca, c.ultima_execucao, c.total_execucoes, c.total_novos,
+                   (SELECT MAX(e.inicio) FROM execucoes_captacao e WHERE e.captacao_id = c.id AND e.novos_resultados > 0) as ultimo_novo
+            FROM captacoes c
+            WHERE c.ativo = 1
+            AND (
+                c.ultima_execucao IS NULL
+                OR NOT EXISTS (
+                    SELECT 1 FROM execucoes_captacao e 
+                    WHERE e.captacao_id = c.id 
+                    AND e.novos_resultados > 0 
+                    AND date(e.inicio) >= date('now', 'localtime', ? || ' days')
+                )
+            )
+            ORDER BY c.ultima_execucao ASC
+        """, (f"-{dias}",)).fetchall()
     
     return {
         "status": "success",
@@ -384,14 +460,22 @@ def alertas_sem_resultados(dias: int = Query(3, ge=1, le=30)):
 # Comparação entre Execuções (Diff)
 # =========================================================================
 
-@router.get("/{captacao_id}/diff", summary="Comparar duas execuções")
+@router.get("/{captacao_id}/diff-execucoes", summary="Comparar duas execuções específicas")
+@limiter.limit("60/minute")
 def diff_execucoes(
+    request: Request,
     captacao_id: int,
     exec_a: int = Query(..., description="ID da execução A"),
     exec_b: int = Query(..., description="ID da execução B"),
+    current_user: UserInDB = Depends(get_current_user),
 ):
     """Compara resultados entre duas execuções da mesma captação."""
     db = get_db()
+    cap = db.obter_captacao(captacao_id)
+    if cap:
+        tid = _tid(current_user)
+        if tid and dict(cap).get("tenant_id") != tid:
+            raise HTTPException(status_code=403, detail="Acesso negado")
     
     a = db.conn.execute("SELECT * FROM execucoes_captacao WHERE id=? AND captacao_id=?", (exec_a, captacao_id)).fetchone()
     b = db.conn.execute("SELECT * FROM execucoes_captacao WHERE id=? AND captacao_id=?", (exec_b, captacao_id)).fetchone()
@@ -431,7 +515,8 @@ def diff_execucoes(
 # =========================================================================
 
 @router.post("/{captacao_id}/retry", summary="Retry com backoff exponencial")
-def retry_captacao(captacao_id: int, max_tentativas: int = Query(3, ge=1, le=5)):
+@limiter.limit("5/minute")
+def retry_captacao(request: Request, captacao_id: int, max_tentativas: int = Query(3, ge=1, le=5), current_user: UserInDB = Depends(get_current_user)):
     """Executa captação com retry automático e backoff exponencial."""
     import time as _time
     
@@ -439,6 +524,9 @@ def retry_captacao(captacao_id: int, max_tentativas: int = Query(3, ge=1, le=5))
     cap = db.obter_captacao(captacao_id)
     if not cap:
         raise HTTPException(status_code=404, detail="Captacao nao encontrada")
+    tid = _tid(current_user)
+    if tid and dict(cap).get("tenant_id") != tid:
+        raise HTTPException(status_code=403, detail="Acesso negado")
     
     service = get_service()
     tentativas = []
@@ -467,17 +555,23 @@ def retry_captacao(captacao_id: int, max_tentativas: int = Query(3, ge=1, le=5))
     }
 
 @router.get("/{captacao_id}", summary="Detalhes de uma captacao")
-def obter_captacao(captacao_id: int):
+@limiter.limit("60/minute")
+def obter_captacao(request: Request, captacao_id: int, current_user: UserInDB = Depends(get_current_user)):
     """Retorna detalhes completos de uma captacao."""
     db = get_db()
     captacao = db.obter_captacao(captacao_id)
     if not captacao:
         raise HTTPException(status_code=404, detail="Captacao nao encontrada")
-    return dict(captacao)
+    cap = dict(captacao)
+    tid = _tid(current_user)
+    if tid and cap.get("tenant_id") != tid:
+        raise HTTPException(status_code=403, detail="Acesso negado")
+    return cap
 
 
 @router.get("/{captacao_id}/exportar/csv", summary="Exportar publicações da captação em CSV")
-def exportar_captacao_csv(captacao_id: int):
+@limiter.limit("5/minute")
+def exportar_captacao_csv(request: Request, captacao_id: int, current_user: UserInDB = Depends(get_current_user)):
     """Exporta todas as publicações vinculadas a esta captação em CSV."""
     import csv, io
     from fastapi.responses import StreamingResponse
@@ -485,6 +579,9 @@ def exportar_captacao_csv(captacao_id: int):
     cap = db.obter_captacao(captacao_id)
     if not cap:
         raise HTTPException(status_code=404, detail="Captacao nao encontrada")
+    tid = _tid(current_user)
+    if tid and dict(cap).get("tenant_id") != tid:
+        raise HTTPException(status_code=403, detail="Acesso negado")
     
     rows = db.conn.execute(
         "SELECT * FROM publicacoes WHERE captacao_id = ? ORDER BY id DESC", (captacao_id,)
@@ -512,7 +609,8 @@ def exportar_captacao_csv(captacao_id: int):
 
 
 @router.get("/{captacao_id}/exportar/json", summary="Exportar publicações da captação em JSON")
-def exportar_captacao_json(captacao_id: int):
+@limiter.limit("5/minute")
+def exportar_captacao_json(request: Request, captacao_id: int, current_user: UserInDB = Depends(get_current_user)):
     """Exporta todas as publicações vinculadas a esta captação em JSON."""
     import json as _json
     from fastapi.responses import StreamingResponse
@@ -520,6 +618,9 @@ def exportar_captacao_json(captacao_id: int):
     cap = db.obter_captacao(captacao_id)
     if not cap:
         raise HTTPException(status_code=404, detail="Captacao nao encontrada")
+    tid = _tid(current_user)
+    if tid and dict(cap).get("tenant_id") != tid:
+        raise HTTPException(status_code=403, detail="Acesso negado")
     
     rows = db.conn.execute(
         "SELECT * FROM publicacoes WHERE captacao_id = ? ORDER BY id DESC", (captacao_id,)
@@ -535,9 +636,15 @@ def exportar_captacao_json(captacao_id: int):
 
 
 @router.get("/{captacao_id}/historico-alteracoes", summary="Histórico de alterações da captação")
-def historico_alteracoes(captacao_id: int, limite: int = Query(50, ge=1, le=200)):
+@limiter.limit("60/minute")
+def historico_alteracoes(request: Request, captacao_id: int, limite: int = Query(50, ge=1, le=200), current_user: UserInDB = Depends(get_current_user)):
     """Lista alterações feitas na captação via auditoria."""
     db = get_db()
+    cap = db.obter_captacao(captacao_id)
+    if cap:
+        tid = _tid(current_user)
+        if tid and dict(cap).get("tenant_id") != tid:
+            raise HTTPException(status_code=403, detail="Acesso negado")
     rows = db.conn.execute("""
         SELECT * FROM audit_logs 
         WHERE entity_type LIKE '%captacao%' AND (entity_id = ? OR details LIKE ?)
@@ -547,28 +654,21 @@ def historico_alteracoes(captacao_id: int, limite: int = Query(50, ge=1, le=200)
 
 
 @router.post("/{captacao_id}/agendar-data", summary="Agendar execução para data específica")
+@limiter.limit("30/minute")
 def agendar_data(
+    request: Request,
     captacao_id: int,
     data_execucao: str = Query(..., description="Data e hora (YYYY-MM-DD HH:MM)"),
+    current_user: UserInDB = Depends(get_current_user),
 ):
     """Agenda execução única para data e hora específica."""
     db = get_db()
     cap = db.obter_captacao(captacao_id)
     if not cap:
         raise HTTPException(status_code=404, detail="Captacao nao encontrada")
-    try:
-        db.conn.execute("""
-            CREATE TABLE IF NOT EXISTS captacao_agendamentos (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                captacao_id INTEGER NOT NULL,
-                data_execucao TEXT NOT NULL,
-                status TEXT DEFAULT 'pendente',
-                criado_em TEXT DEFAULT (datetime('now', 'localtime'))
-            )
-        """)
-        db.conn.commit()
-    except Exception:
-        pass
+    tid = _tid(current_user)
+    if tid and dict(cap).get("tenant_id") != tid:
+        raise HTTPException(status_code=403, detail="Acesso negado")
     cur = db.conn.execute(
         "INSERT INTO captacao_agendamentos (captacao_id, data_execucao) VALUES (?, ?)",
         (captacao_id, data_execucao)
@@ -578,9 +678,15 @@ def agendar_data(
 
 
 @router.get("/{captacao_id}/agendamentos", summary="Listar agendamentos")
-def listar_agendamentos(captacao_id: int):
+@limiter.limit("60/minute")
+def listar_agendamentos(request: Request, captacao_id: int, current_user: UserInDB = Depends(get_current_user)):
     """Lista agendamentos de execução."""
     db = get_db()
+    cap = db.obter_captacao(captacao_id)
+    if cap:
+        tid = _tid(current_user)
+        if tid and dict(cap).get("tenant_id") != tid:
+            raise HTTPException(status_code=403, detail="Acesso negado")
     try:
         rows = db.conn.execute(
             "SELECT * FROM captacao_agendamentos WHERE captacao_id = ? ORDER BY data_execucao ASC",
@@ -592,19 +698,21 @@ def listar_agendamentos(captacao_id: int):
 
 
 @router.put("/{captacao_id}/limite", summary="Configurar limite de resultados")
+@limiter.limit("30/minute")
 def configurar_limite(
+    request: Request,
     captacao_id: int,
     max_resultados: int = Query(1000, ge=100, le=10000, description="Limite máximo de resultados"),
     max_paginas: int = Query(10, ge=1, le=50, description="Máximo de páginas por execução"),
+    current_user: UserInDB = Depends(get_current_user),
 ):
     """Configura limite de resultados por captação."""
     db = get_db()
-    try:
-        db.conn.execute("ALTER TABLE captacoes ADD COLUMN max_resultados INTEGER DEFAULT 1000")
-        db.conn.execute("ALTER TABLE captacoes ADD COLUMN max_paginas INTEGER DEFAULT 10")
-        db.conn.commit()
-    except Exception:
-        pass
+    cap = db.obter_captacao(captacao_id)
+    if cap:
+        tid = _tid(current_user)
+        if tid and dict(cap).get("tenant_id") != tid:
+            raise HTTPException(status_code=403, detail="Acesso negado")
     db.conn.execute(
         "UPDATE captacoes SET max_resultados = ?, max_paginas = ? WHERE id = ?",
         (max_resultados, max_paginas, captacao_id)
@@ -614,12 +722,16 @@ def configurar_limite(
 
 
 @router.get("/{captacao_id}/resumo-whatsapp", summary="Resumo para WhatsApp")
-def resumo_whatsapp(captacao_id: int):
+@limiter.limit("60/minute")
+def resumo_whatsapp(request: Request, captacao_id: int, current_user: UserInDB = Depends(get_current_user)):
     """Gera resumo formatado para envio via WhatsApp."""
     db = get_db()
     cap = db.obter_captacao(captacao_id)
     if not cap:
         raise HTTPException(status_code=404, detail="Captacao nao encontrada")
+    tid = _tid(current_user)
+    if tid and dict(cap).get("tenant_id") != tid:
+        raise HTTPException(status_code=403, detail="Acesso negado")
     cap = dict(cap)
     
     ultima = db.conn.execute(
@@ -653,12 +765,16 @@ Novos: {u.get('novos_resultados', 0)}"""
 
 
 @router.get("/{captacao_id}/estatisticas", summary="Estatísticas avançadas da captação")
-def estatisticas_captacao(captacao_id: int):
+@limiter.limit("60/minute")
+def estatisticas_captacao(request: Request, captacao_id: int, current_user: UserInDB = Depends(get_current_user)):
     """Retorna estatísticas detalhadas de uma captação."""
     db = get_db()
     cap = db.obter_captacao(captacao_id)
     if not cap:
         raise HTTPException(status_code=404, detail="Captacao nao encontrada")
+    tid = _tid(current_user)
+    if tid and dict(cap).get("tenant_id") != tid:
+        raise HTTPException(status_code=403, detail="Acesso negado")
     
     total_exec = db.conn.execute(
         "SELECT COUNT(*) as c FROM execucoes_captacao WHERE captacao_id=?", (captacao_id,)
@@ -710,12 +826,16 @@ def estatisticas_captacao(captacao_id: int):
 
 
 @router.put("/{captacao_id}", summary="Atualizar captacao")
-def atualizar_captacao(captacao_id: int, req: CaptacaoUpdateRequest):
+@limiter.limit("30/minute")
+def atualizar_captacao(request: Request, captacao_id: int, req: CaptacaoUpdateRequest, current_user: UserInDB = Depends(get_current_user)):
     """Atualiza parametros de uma captacao existente."""
     db = get_db()
     existing = db.obter_captacao(captacao_id)
     if not existing:
         raise HTTPException(status_code=404, detail="Captacao nao encontrada")
+    tid = _tid(current_user)
+    if tid and dict(existing).get("tenant_id") != tid:
+        raise HTTPException(status_code=403, detail="Acesso negado")
 
     updates = {}
     data = req.model_dump(exclude_unset=True)
@@ -741,48 +861,78 @@ def atualizar_captacao(captacao_id: int, req: CaptacaoUpdateRequest):
 
 
 @router.delete("/{captacao_id}", summary="Desativar captacao")
-def desativar_captacao(captacao_id: int):
+@limiter.limit("30/minute")
+def desativar_captacao(request: Request, captacao_id: int, current_user: UserInDB = Depends(get_current_user)):
     """Desativa uma captacao (soft delete)."""
     db = get_db()
+    existing = db.obter_captacao(captacao_id)
+    if existing:
+        tid = _tid(current_user)
+        if tid and dict(existing).get("tenant_id") != tid:
+            raise HTTPException(status_code=403, detail="Acesso negado")
     db.atualizar_captacao(captacao_id, ativo=0)
     return {"status": "success", "message": f"Captacao {captacao_id} desativada"}
 
 
 @router.post("/{captacao_id}/executar", summary="Executar captacao agora")
-def executar_captacao(captacao_id: int):
+@limiter.limit("5/minute")
+def executar_captacao(request: Request, captacao_id: int, current_user: UserInDB = Depends(get_current_user)):
     """Executa uma captacao imediatamente (sob demanda)."""
     db = get_db()
     captacao = db.obter_captacao(captacao_id)
     if not captacao:
         raise HTTPException(status_code=404, detail="Captacao nao encontrada")
+    tid = _tid(current_user)
+    if tid and dict(captacao).get("tenant_id") != tid:
+        raise HTTPException(status_code=403, detail="Acesso negado")
     service = get_service()
     return service.executar(captacao_id)
 
 
 @router.post("/{captacao_id}/pausar", summary="Pausar captacao")
-def pausar_captacao(captacao_id: int):
+@limiter.limit("30/minute")
+def pausar_captacao(request: Request, captacao_id: int, current_user: UserInDB = Depends(get_current_user)):
     """Pausa o scheduler sem desativar."""
     db = get_db()
+    existing = db.obter_captacao(captacao_id)
+    if existing:
+        tid = _tid(current_user)
+        if tid and dict(existing).get("tenant_id") != tid:
+            raise HTTPException(status_code=403, detail="Acesso negado")
     db.atualizar_captacao(captacao_id, pausado=1)
     return {"status": "success", "message": f"Captacao {captacao_id} pausada"}
 
 
 @router.post("/{captacao_id}/retomar", summary="Retomar captacao")
-def retomar_captacao(captacao_id: int):
+@limiter.limit("30/minute")
+def retomar_captacao(request: Request, captacao_id: int, current_user: UserInDB = Depends(get_current_user)):
     """Retoma uma captacao pausada."""
     db = get_db()
+    existing = db.obter_captacao(captacao_id)
+    if existing:
+        tid = _tid(current_user)
+        if tid and dict(existing).get("tenant_id") != tid:
+            raise HTTPException(status_code=403, detail="Acesso negado")
     db.atualizar_captacao(captacao_id, pausado=0)
     return {"status": "success", "message": f"Captacao {captacao_id} retomada"}
 
 
 @router.get("/{captacao_id}/historico", summary="Historico de execucoes")
+@limiter.limit("60/minute")
 def historico_captacao(
+    request: Request,
     captacao_id: int,
     limite: int = Query(HISTORICO_LIMIT, ge=1, le=MAX_LIMIT),
     offset: int = Query(0, ge=0),
+    current_user: UserInDB = Depends(get_current_user),
 ):
     """Lista historico de execucoes de uma captacao."""
     db = get_db()
+    cap = db.obter_captacao(captacao_id)
+    if cap:
+        tid = _tid(current_user)
+        if tid and dict(cap).get("tenant_id") != tid:
+            raise HTTPException(status_code=403, detail="Acesso negado")
     execucoes = db.listar_execucoes_captacao(captacao_id, limite=limite, offset=offset)
     total = db.conn.execute(
         "SELECT COUNT(*) as c FROM execucoes_captacao WHERE captacao_id = ?",
@@ -792,21 +942,36 @@ def historico_captacao(
 
 
 @router.get("/{captacao_id}/resultados", summary="Publicacoes encontradas")
+@limiter.limit("60/minute")
 def resultados_captacao(
+    request: Request,
     captacao_id: int,
     limite: int = Query(50, ge=1, le=500),
     offset: int = Query(0, ge=0),
     fonte: Optional[str] = Query(None),
+    current_user: UserInDB = Depends(get_current_user),
 ):
     """Lista publicacoes encontradas por esta captacao."""
     db = get_db()
+    cap = db.obter_captacao(captacao_id)
+    if cap:
+        tid = _tid(current_user)
+        if tid and dict(cap).get("tenant_id") != tid:
+            raise HTTPException(status_code=403, detail="Acesso negado")
     pubs = db.buscar_publicacoes_captacao(captacao_id, limite=limite, offset=offset, fonte=fonte)
     return {"status": "success", "total": len(pubs), "publicacoes": pubs}
 
 
 @router.get("/{captacao_id}/diff", summary="Comparar execucoes")
-def diff_captacao(captacao_id: int):
+@limiter.limit("60/minute")
+def diff_captacao(request: Request, captacao_id: int, current_user: UserInDB = Depends(get_current_user)):
     """Compara ultima execucao vs anterior (novos/mantidos)."""
+    db = get_db()
+    cap = db.obter_captacao(captacao_id)
+    if cap:
+        tid = _tid(current_user)
+        if tid and dict(cap).get("tenant_id") != tid:
+            raise HTTPException(status_code=403, detail="Acesso negado")
     service = get_service()
     return service.diff(captacao_id)
 

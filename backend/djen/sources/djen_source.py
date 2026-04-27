@@ -12,10 +12,12 @@ IMPORTANTE: Esta API requer IP brasileiro (retorna 403 de IPs estrangeiros).
 
 import json
 import logging
+import os
 import re
 from datetime import datetime, timedelta
 from typing import List, Dict, Optional
 
+import certifi
 import requests
 
 from .base import BaseSource, PublicacaoResult
@@ -66,7 +68,9 @@ class DjenSource(BaseSource):
         self.timeout = self.config.get("timeout", 45)
         self.max_results = self.config.get("max_results", 100)
         self.session = requests.Session()
-        self.session.verify = False  # Proxy BR usa cert self-signed
+        # Use proper SSL verification: env var PROXY_CA_CERT for custom CA, otherwise system certs
+        cert_path = os.environ.get("PROXY_CA_CERT", certifi.where())
+        self.session.verify = cert_path
         self.session.headers.update({
             "Accept": "application/json",
             "Accept-Encoding": "identity",
@@ -76,10 +80,6 @@ class DjenSource(BaseSource):
                 "Chrome/120.0.0.0 Safari/537.36"
             ),
         })
-
-        # Suprimir warnings de SSL quando usando proxy
-        import urllib3
-        urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
         # Proxy config (obrigatorio para IPs fora do Brasil)
         self._proxy_config = self.config.get("proxy", None)
@@ -101,11 +101,11 @@ class DjenSource(BaseSource):
         except Exception:
             pass
 
-        # Fallback: proxy residencial Bright Data hardcoded
-        proxy_url = (
-            "http://brd-customer-hl_9fcf364a-zone-residential_proxy1-country-br"
-            ":a42i721ykgk9@brd.superproxy.io:33335"
-        )
+        # Fallback: proxy from environment variable
+        proxy_url = os.environ.get("BRIGHTDATA_PROXY_URL", "")
+        if not proxy_url:
+            log.warning("No proxy available: RouteManager failed and BRIGHTDATA_PROXY_URL not set")
+            return {}
         return {"http": proxy_url, "https": proxy_url}
 
     def _build_params(

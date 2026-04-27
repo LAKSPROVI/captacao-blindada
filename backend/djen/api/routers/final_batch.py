@@ -8,10 +8,12 @@ import json
 from datetime import datetime, date, timedelta
 from typing import Optional
 
-from fastapi import APIRouter, Query, Body
+from fastapi import Request, APIRouter, Depends, Query, Body
 from pydantic import BaseModel
 
 from djen.api.database import Database
+from djen.api.auth import get_current_user, require_role, UserInDB
+from djen.api.ratelimit import limiter
 
 log = logging.getLogger("captacao.final")
 router = APIRouter(prefix="/api/v2", tags=["V2 - Funcionalidades Avançadas"])
@@ -27,7 +29,8 @@ def get_db() -> Database:
 # =============================================================================
 
 @router.get("/captacoes/comparar", summary="Comparar desempenho entre captações")
-def comparar_captacoes(ids: str = Query(..., description="IDs separados por vírgula")):
+@limiter.limit("60/minute")
+def comparar_captacoes(request: Request, ids: str = Query(..., description="IDs separados por vírgula")):
     db = get_db()
     id_list = [int(x.strip()) for x in ids.split(",") if x.strip().isdigit()]
     resultados = []
@@ -47,8 +50,8 @@ def comparar_captacoes(ids: str = Query(..., description="IDs separados por vír
 # =============================================================================
 
 @router.get("/publicacoes/periodo", summary="Publicações por período")
-def publicacoes_periodo(
-    data_inicio: str = Query(...),
+@limiter.limit("60/minute")
+def publicacoes_periodo(request: Request, data_inicio: str = Query(...),
     data_fim: str = Query(...),
     tribunal: Optional[str] = Query(None),
 ):
@@ -67,7 +70,8 @@ def publicacoes_periodo(
 # =============================================================================
 
 @router.get("/produtividade/score", summary="Score de produtividade do sistema")
-def score_produtividade():
+@limiter.limit("60/minute")
+def score_produtividade(request: Request):
     db = get_db()
     hoje = date.today().isoformat()
     semana = (date.today() - timedelta(days=7)).isoformat()
@@ -93,7 +97,8 @@ def score_produtividade():
 # =============================================================================
 
 @router.get("/atividade/heatmap", summary="Mapa de calor de atividade")
-def heatmap_atividade(dias: int = Query(30, ge=7, le=90)):
+@limiter.limit("60/minute")
+def heatmap_atividade(request: Request, dias: int = Query(30, ge=7, le=90)):
     db = get_db()
     rows = db.conn.execute("""
         SELECT date(inicio) as dia, strftime('%H', inicio) as hora, COUNT(*) as total
@@ -109,7 +114,8 @@ def heatmap_atividade(dias: int = Query(30, ge=7, le=90)):
 # =============================================================================
 
 @router.get("/previsao/consumo", summary="Previsão de consumo de tokens")
-def previsao_consumo():
+@limiter.limit("60/minute")
+def previsao_consumo(request: Request):
     db = get_db()
     try:
         ultimos_30 = db.conn.execute("""
@@ -140,40 +146,25 @@ def previsao_consumo():
 # =============================================================================
 
 @router.get("/notas", summary="Listar notas globais")
-def listar_notas(limite: int = Query(50, ge=1, le=200)):
+@limiter.limit("60/minute")
+def listar_notas(request: Request, limite: int = Query(50, ge=1, le=200)):
     db = get_db()
-    try:
-        db.conn.execute("""CREATE TABLE IF NOT EXISTS notas_globais (
-            id INTEGER PRIMARY KEY AUTOINCREMENT, titulo TEXT, conteudo TEXT,
-            cor TEXT DEFAULT '#3b82f6', fixada INTEGER DEFAULT 0,
-            criado_em TEXT DEFAULT (datetime('now','localtime'))
-        )""")
-        db.conn.commit()
-    except Exception:
-        pass
     rows = db.conn.execute("SELECT * FROM notas_globais ORDER BY fixada DESC, id DESC LIMIT ?", (limite,)).fetchall()
     return {"status": "success", "total": len(rows), "notas": [dict(r) for r in rows]}
 
 
 @router.post("/notas", summary="Criar nota")
-def criar_nota(titulo: str = Body(...), conteudo: str = Body(""), cor: str = Body("#3b82f6")):
+@limiter.limit("30/minute")
+def criar_nota(request: Request, titulo: str = Body(...), conteudo: str = Body(""), cor: str = Body("#3b82f6")):
     db = get_db()
-    try:
-        db.conn.execute("""CREATE TABLE IF NOT EXISTS notas_globais (
-            id INTEGER PRIMARY KEY AUTOINCREMENT, titulo TEXT, conteudo TEXT,
-            cor TEXT DEFAULT '#3b82f6', fixada INTEGER DEFAULT 0,
-            criado_em TEXT DEFAULT (datetime('now','localtime'))
-        )""")
-        db.conn.commit()
-    except Exception:
-        pass
     cur = db.conn.execute("INSERT INTO notas_globais (titulo, conteudo, cor) VALUES (?, ?, ?)", (titulo, conteudo, cor))
     db.conn.commit()
     return {"status": "success", "id": cur.lastrowid}
 
 
 @router.delete("/notas/{nota_id}", summary="Remover nota")
-def remover_nota(nota_id: int):
+@limiter.limit("30/minute")
+def remover_nota(request: Request, nota_id: int):
     db = get_db()
     db.conn.execute("DELETE FROM notas_globais WHERE id = ?", (nota_id,))
     db.conn.commit()
@@ -185,7 +176,8 @@ def remover_nota(nota_id: int):
 # =============================================================================
 
 @router.get("/templates", summary="Listar templates de captação")
-def listar_templates():
+@limiter.limit("60/minute")
+def listar_templates(request: Request):
     return {"status": "success", "templates": [
         {"id": "oab", "nome": "Busca por OAB", "tipo_busca": "oab", "descricao": "Monitora publicações por número de OAB"},
         {"id": "processo", "nome": "Busca por Processo", "tipo_busca": "processo", "descricao": "Monitora um processo específico por número CNJ"},
@@ -200,7 +192,8 @@ def listar_templates():
 # =============================================================================
 
 @router.get("/resumo-executivo", summary="Resumo executivo consolidado")
-def resumo_executivo():
+@limiter.limit("60/minute")
+def resumo_executivo(request: Request):
     db = get_db()
     hoje = date.today().isoformat()
     semana = (date.today() - timedelta(days=7)).isoformat()
@@ -233,7 +226,8 @@ def resumo_executivo():
 # =============================================================================
 
 @router.get("/exportar-tudo", summary="Exportar todos os dados em JSON")
-def exportar_tudo():
+@limiter.limit("5/minute")
+def exportar_tudo(request: Request):
     from fastapi.responses import StreamingResponse
     db = get_db()
     
@@ -260,7 +254,8 @@ def exportar_tudo():
 # =============================================================================
 
 @router.get("/health-check-completo", summary="Verificação completa de saúde")
-def health_check_completo():
+@limiter.limit("60/minute")
+def health_check_completo(request: Request):
     db = get_db()
     checks = {}
     
@@ -269,7 +264,8 @@ def health_check_completo():
         db.conn.execute("SELECT 1")
         checks["database"] = {"status": "ok"}
     except Exception as e:
-        checks["database"] = {"status": "error", "message": str(e)}
+        log.error("Erro health-check database: %s", e, exc_info=True)
+        checks["database"] = {"status": "error", "message": "Erro ao acessar banco de dados"}
     
     # Tables
     try:

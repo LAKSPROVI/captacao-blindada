@@ -15,7 +15,7 @@ from djen.api.database import Database
 from djen.sources.datajud import DatajudSource
 from djen.api.circuitbreaker import get_circuit, CircuitOpenError, CircuitBreakerConfig
 from djen.api.ratelimit import limiter
-from djen.api.circuitbreaker import get_circuit, CircuitOpenError, CircuitBreakerConfig
+from djen.api.auth import get_current_user, UserInDB
 
 log = logging.getLogger("captacao.datajud")
 router = APIRouter(prefix="/api/datajud", tags=["DataJud"])
@@ -118,12 +118,13 @@ def buscar_datajud(request: Request, req: BuscaDatajudRequest):
         elapsed_ms = int((time.time() - t0) * 1000)
         db.registrar_busca("datajud", "datajud", req.tribunal, req.numero_processo or "",
                            0, "erro", elapsed_ms, str(e))
-        log.error("[DataJud] Erro na busca: %s", e)
-        raise HTTPException(status_code=502, detail=f"Erro ao consultar DataJud: {e}")
+        log.error("[DataJud] Erro na busca: %s", e, exc_info=True)
+        raise HTTPException(status_code=502, detail="Erro ao consultar servico externo")
 
 
 @router.get("/processo/{numero}", response_model=BuscaResponse, summary="Buscar processo por numero")
-def buscar_processo(numero: str, tribunal: str = Query(..., description="Sigla do tribunal (ex: tjsp)")):
+@limiter.limit("60/minute")
+def buscar_processo(request: Request, numero: str, tribunal: str = Query(..., description="Sigla do tribunal (ex: tjsp)")):
     """Busca um processo especifico pelo numero no DataJud."""
     source = get_source()
     db = get_db()
@@ -146,19 +147,21 @@ def buscar_processo(numero: str, tribunal: str = Query(..., description="Sigla d
             resultados=[_to_response(r) for r in resultados],
         )
     except Exception as e:
-        log.error("[DataJud] Erro ao buscar processo %s: %s", numero, e)
-        raise HTTPException(status_code=502, detail=str(e))
+        log.error("[DataJud] Erro ao buscar processo %s: %s", numero, e, exc_info=True)
+        raise HTTPException(status_code=502, detail="Erro ao consultar servico externo")
 
 
 @router.get("/tribunais", summary="Listar tribunais disponiveis no DataJud")
-def listar_tribunais():
+@limiter.limit("60/minute")
+def listar_tribunais(request: Request):
     """Lista todos os tribunais disponiveis para consulta no DataJud."""
     source = get_source()
     return {"tribunais": source.listar_tribunais(), "total": len(source.listar_tribunais())}
 
 
 @router.get("/health", summary="Health check DataJud")
-def health_check_datajud():
+@limiter.limit("60/minute")
+def health_check_datajud(request: Request):
     """Verifica se a API DataJud esta acessivel."""
     source = get_source()
     db = get_db()

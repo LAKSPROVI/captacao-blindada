@@ -172,9 +172,13 @@ class CacheManager:
             # Redis
             if self._use_redis and self._redis:
                 try:
-                    keys = self._redis.keys("captacao:*")
-                    if keys:
-                        self._redis.delete(*keys)
+                    cursor = 0
+                    while True:
+                        cursor, keys = self._redis.scan(cursor, match="captacao:*", count=100)
+                        if keys:
+                            self._redis.delete(*keys)
+                        if cursor == 0:
+                            break
                 except Exception:
                     pass
             
@@ -214,14 +218,17 @@ class CacheManager:
 # =============================================================================
 
 _cache: Optional[CacheManager] = None
+_cache_lock = threading.Lock()
 
 
 def get_cache() -> CacheManager:
     """Retorna gerenciador de cache."""
     global _cache
     if _cache is None:
-        _cache = CacheManager()
+        with _cache_lock:
+            if _cache is None:
+                _cache = CacheManager()
     return _cache
 
 
-log.info("Cache manager loaded (supports Redis optionally)")
+log.debug("Cache manager loaded (supports Redis optionally)")

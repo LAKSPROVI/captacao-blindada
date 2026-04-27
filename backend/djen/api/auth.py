@@ -10,9 +10,11 @@ import time
 from datetime import datetime, timedelta, timezone
 from typing import Optional, Dict
 
-from fastapi import APIRouter, Depends, HTTPException, status, Request
+from fastapi import APIRouter, Depends, HTTPException, status, Request, Response
+from fastapi.responses import JSONResponse
 from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
-from jose import JWTError, jwt
+import jwt
+from jwt.exceptions import InvalidTokenError
 import bcrypt
 from pydantic import BaseModel
 from djen.api.database import get_database, Database
@@ -40,10 +42,12 @@ if not SECRET_KEY:
             "Or add to .env: JWT_SECRET_KEY=your-secure-key-here"
         )
     else:
-        log.warning("JWT_SECRET_KEY not set! Using temporary key for DEVELOPMENT only.")
-        SECRET_KEY = os.environ.get(
-            "DEFAULT_SECRET_KEY",
-            "captacao-blindada-dev-key-CHANGE-IN-PRODUCTION"
+        log.critical("FATAL: JWT_SECRET_KEY is REQUIRED. Set the JWT_SECRET_KEY environment variable.")
+        raise RuntimeError(
+            "JWT_SECRET_KEY is required!\n"
+            "Please set the JWT_SECRET_KEY environment variable.\n"
+            "Generate one with: python -c \"import secrets; print(secrets.token_hex(32))\"\n"
+            "Or add to .env: JWT_SECRET_KEY=your-secure-key-here"
         )
 
 ALGORITHM = "HS256"
@@ -197,7 +201,24 @@ def create_access_token(
 # ---------------------------------------------------------------------------
 
 
-async def get_current_user(token: str = Depends(oauth2_scheme)) -> UserInDB:
+async def _get_token_from_cookie_or_header(request: Request) -> str:
+    """Extract JWT token from httpOnly cookie first, then fall back to Authorization header."""
+    # 1. Try cookie
+    token = request.cookies.get("access_token")
+    if token:
+        return token
+    # 2. Fall back to Authorization header (for non-browser clients)
+    auth_header = request.headers.get("Authorization")
+    if auth_header and auth_header.startswith("Bearer "):
+        return auth_header[7:]
+    raise HTTPException(
+        status_code=status.HTTP_401_UNAUTHORIZED,
+        detail="Token invalido ou expirado",
+        headers={"WWW-Authenticate": "Bearer"},
+    )
+
+
+async def get_current_user(token: str = Depends(_get_token_from_cookie_or_header)) -> UserInDB:
     """Decode and validate the JWT, returning the authenticated user."""
     credentials_exception = HTTPException(
         status_code=status.HTTP_401_UNAUTHORIZED,
@@ -222,12 +243,11 @@ def require_role(*allowed_roles: str):
     """Dependency factory that restricts access to specific roles."""
 
     async def _check_role(current_user: UserInDB = Depends(get_current_user)) -> UserInDB:
-        if current_user.role not in allowed_roles and "master" not in allowed_roles: # master sempre pode tudo? dependendo da logica.
-            if current_user.role != "master":
-                raise HTTPException(
-                    status_code=status.HTTP_403_FORBIDDEN,
-                    detail=f"Acesso negado. Roles permitidas: {', '.join(allowed_roles)}",
-                )
+        if current_user.role not in allowed_roles and current_user.role != "master":
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail=f"Acesso negado. Roles permitidas: {', '.join(allowed_roles)}",
+            )
         return current_user
 
     return _check_role
@@ -280,10 +300,10 @@ def _clear_attempts(username: str):
 router = APIRouter(prefix="/api/auth", tags=["Autenticacao"])
 
 
-@router.post("/login", response_model=Token, summary="Obter token de acesso")
+@router.post("/login", summary="Obter token de acesso")
 @limiter.limit("5/minute")
 async def login(request: Request, form_data: OAuth2PasswordRequestForm = Depends()):
-    """Authenticate with username/password and receive a JWT access token."""
+    """Authenticate with username/password and receive a JWT access token via httpOnly cookie."""
     # Verificar bloqueio
     if _check_login_blocked(form_data.username):
         registrar_auditoria("LOGIN_BLOCKED", "auth", form_data.username, 
@@ -313,10 +333,44 @@ async def login(request: Request, form_data: OAuth2PasswordRequestForm = Depends
     _clear_attempts(form_data.username)
     registrar_auditoria("LOG_IN", "auth", str(user.id), {"username": user.username, "tenant": user.tenant_id}, user.id, user.tenant_id)
     
-    return Token(
-        access_token=access_token,
-        expires_in=ACCESS_TOKEN_EXPIRE_MINUTES * 60,
+    response = JSONResponse(content={
+        "access_token": access_token,
+        "token_type": "bearer",
+        "expires_in": ACCESS_TOKEN_EXPIRE_MINUTES * 60,
+    })
+    response.set_cookie(
+        key="access_token",
+        value=access_token,
+        httponly=True,
+        secure=_IS_PRODUCTION,
+        samesite="lax",
+        max_age=ACCESS_TOKEN_EXPIRE_MINUTES * 60,
+        path="/",
     )
+    return response
+
+
+@router.post("/logout", summary="Encerrar sessao")
+async def logout(request: Request):
+    """Clear the httpOnly auth cookie to log the user out."""
+    # Try to get user info for audit before clearing
+    token = request.cookies.get("access_token")
+    user_id = None
+    if token:
+        try:
+            payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
+            username = payload.get("sub")
+            if username:
+                user = get_user_from_db(username)
+                if user:
+                    user_id = user.id
+                    registrar_auditoria("LOG_OUT", "auth", str(user.id), {"username": user.username}, user.id, user.tenant_id)
+        except JWTError:
+            pass
+
+    response = JSONResponse(content={"status": "ok", "message": "Sessao encerrada"})
+    response.delete_cookie(key="access_token", path="/")
+    return response
 
 
 @router.get("/me", response_model=UserPublic, summary="Dados do usuario autenticado")
@@ -331,7 +385,7 @@ async def me(current_user: UserInDB = Depends(get_current_user)):
     )
 
 
-@router.post("/refresh", response_model=Token, summary="Renovar token de acesso")
+@router.post("/refresh", summary="Renovar token de acesso")
 async def refresh_token(current_user: UserInDB = Depends(get_current_user)):
     """Issue a new access token for an already-authenticated user."""
     expires = timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
@@ -339,10 +393,21 @@ async def refresh_token(current_user: UserInDB = Depends(get_current_user)):
         data={"sub": current_user.username, "role": current_user.role, "tenant_id": current_user.tenant_id},
         expires_delta=expires,
     )
-    return Token(
-        access_token=access_token,
-        expires_in=ACCESS_TOKEN_EXPIRE_MINUTES * 60,
+    response = JSONResponse(content={
+        "access_token": access_token,
+        "token_type": "bearer",
+        "expires_in": ACCESS_TOKEN_EXPIRE_MINUTES * 60,
+    })
+    response.set_cookie(
+        key="access_token",
+        value=access_token,
+        httponly=True,
+        secure=_IS_PRODUCTION,
+        samesite="lax",
+        max_age=ACCESS_TOKEN_EXPIRE_MINUTES * 60,
+        path="/",
     )
+    return response
 
 
 @router.post(

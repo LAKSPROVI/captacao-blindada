@@ -1,6 +1,6 @@
 # Documento Tecnico — Captacao Peticao Blindada
 
-> Versao: 2.1.0 | Atualizado: 2026-04-24 | Para: Desenvolvedores e DevOps | 231 implementações | 120+ endpoints
+> Versao: 3.0.0 | Atualizado: 2026-04-26 | Para: Desenvolvedores e DevOps | 231 implementações | 120+ endpoints
 
 ---
 
@@ -13,10 +13,11 @@
                            |
                 [Contabo 207.180.199.121]
                            |
-                  [Nginx Reverse Proxy]
+                  [Caddy Reverse Proxy]
+                  (auto-TLS, HTTP/2, HTTP/3)
                     /              \
                    /                \
-        :8010 (frontend)     :8001 (backend)
+        :3000 (frontend)     :8000 (backend)
          Next.js 15.1.0       FastAPI + Uvicorn
          React 19.0.0         Python 3.12
          Tailwind CSS 3.4     SQLite WAL
@@ -41,14 +42,16 @@
 | UI | Tailwind CSS + Radix UI + Lucide React | 3.4 / latest / 0.468 |
 | HTTP Client | Axios | 1.7.9 |
 | Backend | FastAPI + Uvicorn + Pydantic | >=0.104 / >=0.24 / >=2.5 |
-| Auth | python-jose (JWT) + passlib (bcrypt) | HS256, 60min expiry |
+| Auth | PyJWT + passlib (bcrypt) | HS256, 60min expiry, httpOnly cookie |
+| Encryption | cryptography (Fernet) | Encriptacao de API keys em repouso |
 | Database | SQLite + WAL mode | Built-in Python |
 | Scheduler | APScheduler | >=3.10 |
 | Web Scraping | BeautifulSoup4 + lxml | HTML parsing |
 | PDF | pdfplumber | PDF extraction |
 | Proxy | Bright Data Residential (BR) | brd.superproxy.io:33335 |
-| Containers | Docker + Docker Compose | v3.8 |
-| Reverse Proxy | Nginx | Em producao |
+| Containers | Docker + Docker Compose (Caddy reverse proxy) | v3.8 |
+| Reverse Proxy | Caddy | Auto-TLS, HTTP/2, HTTP/3 |
+| Node | Node.js | 20 |
 | Testes | Pytest (backend, 288/294) + ESLint (frontend) | >=8.0 / next/core-web-vitals |
 
 ---
@@ -68,6 +71,7 @@ captacao-blindada/
 │       ├── api/
 │       │   ├── app.py                # FastAPI app, lifespan, scheduler, entrypoint
 │       │   ├── auth.py               # JWT auth, user store (Admin initialization)
+│       │   ├── crypto.py             # Encriptacao de API keys (Fernet)
 │       │   ├── database.py           # SQLite WAL thread-safe (Singleton Pattern)
 │       │   ├── schemas.py            # 30+ modelos Pydantic + enums
 │       │   ├── resultado_repository.py # Repositorio de resultados de analise
@@ -168,7 +172,7 @@ captacao-blindada/
 
 ### 3.1 Tabelas
 
-O sistema usa SQLite com 8 tabelas. Arquivo em producao: `/app/data/captacao_blindada.db` (Docker volume `captacao-data`).
+O sistema usa SQLite com 27 tabelas (v3.0.0). Arquivo em producao: `/app/data/captacao_blindada.db` (Docker volume `captacao-data`).
 A conexão é gerenciada por um **Singleton accessor** em `database.py`, garantindo thread-safety e evitando deadlocks no modo WAL.
 
 #### `monitorados` — Itens monitorados (OAB, processo, advogado, parte)
@@ -304,94 +308,95 @@ A conexão é gerenciada por um **Singleton accessor** em `database.py`, garanti
 
 ---
 
-## 4. Endpoints da API (45+)
+## 4. Endpoints da API (120+)
 
 ### 4.1 Autenticacao (`/api/auth/`)
 
 | Metodo | Rota | Auth | Descricao |
 |--------|------|------|-----------|
-| POST | `/api/auth/login` | Nao | Login com username/password (form-urlencoded), retorna JWT |
+| POST | `/api/auth/login` | Nao | Login com username/password (JSON), retorna httpOnly cookie |
 | GET | `/api/auth/me` | Sim | Retorna dados do usuario autenticado |
-| POST | `/api/auth/refresh` | Sim | Renova token JWT |
+| POST | `/api/auth/refresh` | Sim | Renova token JWT (novo cookie) |
+| POST | `/api/auth/logout` | Sim | Limpa cookie httpOnly |
 | POST | `/api/auth/register` | Admin | Registra novo usuario |
 
 ### 4.2 Busca Unificada (`/api/buscar/`)
 
 | Metodo | Rota | Auth | Parametros | Descricao |
 |--------|------|------|------------|-----------|
-| POST | `/api/buscar/unificada` | Nao | Body: termo, tipo, fontes[], tribunal, data_inicio, data_fim, limite | Busca simultanea em DataJud + DJEN (ThreadPoolExecutor) |
+| POST | `/api/buscar/unificada` | Sim | Body: termo, tipo, fontes[], tribunal, data_inicio, data_fim, limite | Busca simultanea em DataJud + DJEN (ThreadPoolExecutor) |
 
 ### 4.3 DataJud (`/api/datajud/`)
 
 | Metodo | Rota | Auth | Descricao |
 |--------|------|------|-----------|
-| POST | `/api/datajud/buscar` | Nao | Busca no DataJud por termo, tribunal, datas |
-| GET | `/api/datajud/processo/{numero}` | Nao | Busca processo especifico |
-| GET | `/api/datajud/tribunais` | Nao | Lista tribunais disponiveis (60+) |
-| GET | `/api/datajud/health` | Nao | Health check do DataJud |
+| POST | `/api/datajud/buscar` | Sim | Busca no DataJud por termo, tribunal, datas |
+| GET | `/api/datajud/processo/{numero}` | Sim | Busca processo especifico |
+| GET | `/api/datajud/tribunais` | Sim | Lista tribunais disponiveis (60+) |
+| GET | `/api/datajud/health` | Sim | Health check do DataJud |
 
 ### 4.4 DJEN (`/api/djen/`)
 
 | Metodo | Rota | Auth | Descricao |
 |--------|------|------|-----------|
-| POST | `/api/djen/buscar` | Nao | Busca no DJEN por termo |
-| GET | `/api/djen/processo/{numero}` | Nao | Busca por numero de processo |
-| GET | `/api/djen/oab/{numero}/{uf}` | Nao | Busca por OAB + UF |
-| GET | `/api/djen/advogado/{nome}` | Nao | Busca por nome de advogado |
-| GET | `/api/djen/parte/{nome}` | Nao | Busca por nome de parte |
-| GET | `/api/djen/tribunais` | Nao | Lista tribunais DJEN (30+) |
-| GET | `/api/djen/health` | Nao | Health check do DJEN (com proxy) |
+| POST | `/api/djen/buscar` | Sim | Busca no DJEN por termo |
+| GET | `/api/djen/processo/{numero}` | Sim | Busca por numero de processo |
+| GET | `/api/djen/oab/{numero}/{uf}` | Sim | Busca por OAB + UF |
+| GET | `/api/djen/advogado/{nome}` | Sim | Busca por nome de advogado |
+| GET | `/api/djen/parte/{nome}` | Sim | Busca por nome de parte |
+| GET | `/api/djen/tribunais` | Sim | Lista tribunais DJEN (30+) |
+| GET | `/api/djen/health` | Sim | Health check do DJEN (com proxy) |
 
 ### 4.5 Monitor (`/api/monitor/`)
 
 | Metodo | Rota | Auth | Descricao |
 |--------|------|------|-----------|
-| POST | `/api/monitor/add` | Nao | Adiciona item monitorado |
-| GET | `/api/monitor/list` | Nao | Lista itens monitorados |
-| GET | `/api/monitor/publicacoes/recentes` | Nao | Publicacoes recentes (paginado) |
-| GET | `/api/monitor/stats` | Nao | Estatisticas de monitoramento |
-| GET | `/api/monitor/{id}` | Nao | Obter monitor especifico |
-| PUT | `/api/monitor/{id}` | Nao | Atualizar monitor |
-| DELETE | `/api/monitor/{id}` | Nao | Deletar monitor |
+| POST | `/api/monitor/add` | Sim | Adiciona item monitorado |
+| GET | `/api/monitor/list` | Sim | Lista itens monitorados |
+| GET | `/api/monitor/publicacoes/recentes` | Sim | Publicacoes recentes (paginado) |
+| GET | `/api/monitor/stats` | Sim | Estatisticas de monitoramento |
+| GET | `/api/monitor/{id}` | Sim | Obter monitor especifico |
+| PUT | `/api/monitor/{id}` | Sim | Atualizar monitor |
+| DELETE | `/api/monitor/{id}` | Sim | Deletar monitor |
 
 ### 4.6 Processo (`/api/processo/`)
 
 | Metodo | Rota | Auth | Descricao |
 |--------|------|------|-----------|
-| POST | `/api/processo/analisar` | Nao | Analise batch de processos |
-| GET | `/api/processo/agents` | Nao | Lista agentes registrados |
-| GET | `/api/processo/cache/stats` | Nao | Estatisticas do cache L1 |
-| GET | `/api/processo/resultados` | Nao | Lista resultados armazenados (paginado) |
-| GET | `/api/processo/resultados/stats` | Nao | Estatisticas dos resultados |
-| GET | `/api/processo/{numero}` | Nao | Analise completa de processo (pipeline) |
-| GET | `/api/processo/{numero}/resumo` | Nao | Resumo executivo |
-| GET | `/api/processo/{numero}/timeline` | Nao | Timeline de movimentacoes |
-| GET | `/api/processo/{numero}/riscos` | Nao | Analise de riscos |
-| GET | `/api/processo/{numero}/status` | Nao | Status do processo |
-| DELETE | `/api/processo/resultados/{numero}` | Nao | Deletar resultado |
-| DELETE | `/api/processo/cache` | Nao | Limpar cache L1 |
-| DELETE | `/api/processo/{numero}/cache` | Nao | Deletar processo do cache |
-| WS | `/api/processo/ws/{numero}` | Nao | WebSocket de progresso em tempo real |
+| POST | `/api/processo/analisar` | Sim | Analise batch de processos |
+| GET | `/api/processo/agents` | Sim | Lista agentes registrados |
+| GET | `/api/processo/cache/stats` | Sim | Estatisticas do cache L1 |
+| GET | `/api/processo/resultados` | Sim | Lista resultados armazenados (paginado) |
+| GET | `/api/processo/resultados/stats` | Sim | Estatisticas dos resultados |
+| GET | `/api/processo/{numero}` | Sim | Analise completa de processo (pipeline) |
+| GET | `/api/processo/{numero}/resumo` | Sim | Resumo executivo |
+| GET | `/api/processo/{numero}/timeline` | Sim | Timeline de movimentacoes |
+| GET | `/api/processo/{numero}/riscos` | Sim | Analise de riscos |
+| GET | `/api/processo/{numero}/status` | Sim | Status do processo |
+| DELETE | `/api/processo/resultados/{numero}` | Sim | Deletar resultado |
+| DELETE | `/api/processo/cache` | Sim | Limpar cache L1 |
+| DELETE | `/api/processo/{numero}/cache` | Sim | Deletar processo do cache |
+| WS | `/api/processo/ws/{numero}` | Sim | WebSocket de progresso em tempo real |
 
 ### 4.7 Captacao (`/api/captacao/`)
 
 | Metodo | Rota | Auth | Descricao |
 |--------|------|------|-----------|
-| POST | `/api/captacao/criar` | Nao | Criar captacao |
-| GET | `/api/captacao/listar` | Nao | Listar captacoes (paginado) |
-| GET | `/api/captacao/stats` | Nao | Estatisticas de captacao |
-| POST | `/api/captacao/preview` | Nao | Preview de captacao (sem salvar) |
-| POST | `/api/captacao/executar-todas` | Nao | Executar todas as captacoes pendentes |
-| GET | `/api/captacao/{id}` | Nao | Obter captacao especifica |
-| PUT | `/api/captacao/{id}` | Nao | Atualizar captacao |
-| DELETE | `/api/captacao/{id}` | Nao | Desativar captacao |
-| POST | `/api/captacao/{id}/executar` | Nao | Executar captacao agora |
-| POST | `/api/captacao/{id}/pausar` | Nao | Pausar captacao |
-| POST | `/api/captacao/{id}/retomar` | Nao | Retomar captacao |
-| GET | `/api/captacao/{id}/historico` | Nao | Historico de execucoes |
-| GET | `/api/captacao/{id}/resultados` | Nao | Resultados encontrados |
-| GET | `/api/captacao/{id}/diff` | Nao | Novos desde ultima execucao |
-| WS | `/api/captacao/ws/{id}` | Nao | WebSocket de progresso |
+| POST | `/api/captacao/criar` | Sim | Criar captacao |
+| GET | `/api/captacao/listar` | Sim | Listar captacoes (paginado) |
+| GET | `/api/captacao/stats` | Sim | Estatisticas de captacao |
+| POST | `/api/captacao/preview` | Sim | Preview de captacao (sem salvar) |
+| POST | `/api/captacao/executar-todas` | Sim | Executar todas as captacoes pendentes |
+| GET | `/api/captacao/{id}` | Sim | Obter captacao especifica |
+| PUT | `/api/captacao/{id}` | Sim | Atualizar captacao |
+| DELETE | `/api/captacao/{id}` | Sim | Desativar captacao |
+| POST | `/api/captacao/{id}/executar` | Sim | Executar captacao agora |
+| POST | `/api/captacao/{id}/pausar` | Sim | Pausar captacao |
+| POST | `/api/captacao/{id}/retomar` | Sim | Retomar captacao |
+| GET | `/api/captacao/{id}/historico` | Sim | Historico de execucoes |
+| GET | `/api/captacao/{id}/resultados` | Sim | Resultados encontrados |
+| GET | `/api/captacao/{id}/diff` | Sim | Novos desde ultima execucao |
+| WS | `/api/captacao/ws/{id}` | Sim | WebSocket de progresso |
 
 ### 4.8 Health (`/api/health`)
 
@@ -514,16 +519,42 @@ O sistema de agendamento na versão 1.2 atua de forma convergente (Unificação 
 
 ---
 
-## 9. Autenticacao
+## 9. Autenticacao e Seguranca
 
-- **Algoritmo**: JWT HS256
+### 9.1 JWT (httpOnly Cookies)
+- **Algoritmo**: JWT HS256 (PyJWT)
 - **Expiracao**: 60 minutos (configuravel via `JWT_EXPIRE_MINUTES`)
-- **User Store**: In-memory (nao persistido em SQLite)
-- **Roles**: admin, user, viewer
+- **Transporte**: Cookie httpOnly (Secure, SameSite=Lax)
+- **Fallback**: Header `Authorization: Bearer {token}` (para APIs externas)
+- **User Store**: SQLite tabela `users` (multi-tenant)
+- **Roles**: superadmin, admin, user, viewer
 - **Admin default**: username e password vem de env vars (`ADMIN_USERNAME`, `ADMIN_PASSWORD`)
-- **Token**: Armazenado no `localStorage` do frontend
-- **Interceptor**: Axios injeta header `Authorization: Bearer {token}` em toda request
-- **401 Handler**: Frontend remove token e redireciona para `/login`
+- **Cookie**: Definido pelo backend no login, removido no logout
+- **Frontend**: NAO armazena token (cookie automatico via `credentials: 'include'`)
+- **401 Handler**: Frontend limpa estado e redireciona para `/login`
+
+### 9.2 Criptografia de API Keys
+- **Algoritmo**: Fernet (AES-128-CBC + HMAC-SHA256)
+- **Modulo**: `crypto.py` — `encrypt_value()` / `decrypt_value()`
+- **Chave**: `ENCRYPTION_KEY` em `.env` (gerada via `Fernet.generate_key()`)
+- **Uso**: API keys (DataJud, Bright Data) criptografadas em repouso
+
+### 9.3 Rate Limiting
+- **Biblioteca**: slowapi (baseado em limits)
+- **Limites**: 30/min para endpoints de busca, 5/min para login
+- **Identificacao**: IP do cliente (via X-Forwarded-For do Caddy)
+
+### 9.4 Sanitizacao Anti-Prompt-Injection
+- **Modulo**: `agents/sanitize.py`
+- **Aplica-se a**: Todos os inputs que passam por agentes LLM
+- **Tecnicas**: Remocao de instrucoes maliciosas, escape de delimitadores
+
+### 9.5 Security Headers (Caddy)
+- `Strict-Transport-Security: max-age=63072000; includeSubDomains; preload`
+- `X-Frame-Options: DENY`
+- `X-Content-Type-Options: nosniff`
+- `Referrer-Policy: strict-origin-when-cross-origin`
+- `Permissions-Policy: camera=(), microphone=(), geolocation=()`
 
 ---
 
@@ -538,6 +569,12 @@ O sistema de agendamento na versão 1.2 atua de forma convergente (Unificação 
 | `/busca` | `BuscaPage` | Busca unificada com 3 fontes (Unificada, DataJud, DJEN), filtros |
 | `/monitor` | `MonitorPage` | Monitor com tabela, stats, publicacoes expansiveis |
 | `/captacao` | `CaptacaoPage` | Captacao automatizada com dashboard, cards, formulario de criacao |
+| `/configuracao-ia` | `ConfiguracaoIAPage` | Configuracao de agentes IA e parametros |
+| `/admin/usuarios` | `UsuariosPage` | Gestao de usuarios (RBAC) |
+| `/admin/auditoria` | `AuditoriaPage` | Cadeia de custodia e logs de auditoria |
+| `/admin/tarifacao` | `TarifacaoPage` | Tarifacao e consumo |
+| `/admin/tenants` | `TenantsPage` | Gestao de cadastros/tenants |
+| `/admin/erros` | `ErrosPage` | Monitoramento de erros do sistema |
 
 ### Componentes Compartilhados
 
@@ -553,7 +590,7 @@ O sistema de agendamento na versão 1.2 atua de forma convergente (Unificação 
 
 ### API Client (`api.ts`)
 
-Singleton `ApiClient` com Axios. 30+ metodos mapeando todos os endpoints do backend. Interceptors para JWT e 401.
+Singleton `ApiClient` com Axios. 50+ metodos mapeando todos os endpoints do backend. Cookie httpOnly automatico via `withCredentials: true`. Interceptor 401 redireciona para `/login`.
 
 ---
 
@@ -564,25 +601,29 @@ Singleton `ApiClient` com Axios. 30+ metodos mapeando todos os endpoints do back
 | `CAPTACAO_PORT` | 8000 | Porta do backend |
 | `CAPTACAO_HOST` | 0.0.0.0 | Host do backend |
 | `CAPTACAO_DB_PATH` | data/captacao_blindada.db | Caminho do SQLite |
-| `JWT_SECRET_KEY` | dev-secret... | Chave de assinatura JWT |
+| `JWT_SECRET_KEY` | (obrigatorio) | Chave de assinatura JWT (app recusa iniciar sem) |
 | `JWT_EXPIRE_MINUTES` | 60 | Expiracao do token |
+| `ENCRYPTION_KEY` | (obrigatorio) | Chave Fernet para criptografia de API keys |
 | `ADMIN_USERNAME` | admin | Usuario admin |
-| `ADMIN_PASSWORD` | admin | Senha admin |
+| `ADMIN_PASSWORD` | (obrigatorio) | Senha admin (SEM valor padrao em producao) |
 | `ADMIN_FULL_NAME` | Administrador | Nome do admin |
-| `DATAJUD_API_KEY` | cDZHYz... | API Key do DataJud |
+| `DATAJUD_API_KEY` | (obrigatorio) | API Key do DataJud (criptografada em repouso) |
 | `DATAJUD_BASE_URL` | https://api-publica.datajud.cnj.jus.br | URL base DataJud |
 | `DJEN_API_BASE_URL` | https://comunicaapi.pje.jus.br | URL base DJEN |
-| `BRIGHT_DATA_CUSTOMER_ID` | — | ID cliente Bright Data |
-| `BRIGHT_DATA_PROXY_HOST` | brd.superproxy.io | Host do proxy |
-| `BRIGHT_DATA_PROXY_PORT` | 33335 | Porta do proxy |
-| `BRIGHT_DATA_PROXY_USERNAME` | — | Usuario do proxy |
-| `BRIGHT_DATA_PROXY_PASSWORD` | — | Senha do proxy |
-| `BRIGHT_DATA_API_KEY` | — | API Key Web Unlocker |
+| `BRIGHTDATA_PROXY_URL` | — | URL proxy residencial Bright Data |
+| `BRIGHTDATA_API_KEY` | — | API Key Bright Data (criptografada) |
+| `BRIGHTDATA_SCRAPING_BROWSER_WS` | — | WebSocket Scraping Browser |
 | `USE_ML_AGENTS` | false | Ativar agentes LLM |
 | `LLM_API_URL` | https://api.gameron.io/v1/... | URL da API LLM |
-| `LLM_API_KEY` | — | Chave da API LLM |
+| `LLM_API_KEY` | — | Chave da API LLM (criptografada) |
 | `LLM_MODEL` | gpt-4.1-mini | Modelo LLM |
 | `NEXT_PUBLIC_API_URL` | http://localhost:8000 | URL do backend para o frontend |
+| `DOMAIN` | — | Dominio para TLS do Caddy |
+| `ALLOWED_ORIGINS` | — | Origens CORS permitidas |
+| `IS_PRODUCTION` | false | `true` em producao |
+
+> IMPORTANTE: `.env` esta no `.gitignore`. NUNCA commitar credenciais.
+> Em producao, `JWT_SECRET_KEY`, `ENCRYPTION_KEY` e `ADMIN_PASSWORD` sao obrigatorios.
 
 ---
 
@@ -592,7 +633,7 @@ Singleton `ApiClient` com Axios. 30+ metodos mapeando todos os endpoints do back
 - **Provider**: Contabo VPS
 - **IP**: 207.180.199.121
 - **OS**: Linux
-- **Dominio**: captacao.jurislaw.com.br (SSL via Nginx)
+- **Dominio**: captacao.jurislaw.com.br (TLS automatico via Caddy)
 
 ### Processo de Deploy
 
@@ -602,12 +643,13 @@ Singleton `ApiClient` com Axios. 30+ metodos mapeando todos os endpoints do back
 # 2. SCP para o servidor
 scp -i ~/.ssh/contabo_key arquivo root@207.180.199.121:/opt/captacao-blindada/caminho/
 
-# 3. Rebuild e restart dos containers
+# 3. Rebuild e restart dos containers (inclui Caddy)
 ssh root@207.180.199.121 "cd /opt/captacao-blindada && docker compose up --build -d"
 
 # 4. Verificar logs
 ssh root@207.180.199.121 "docker compose logs --tail=50 backend"
 ssh root@207.180.199.121 "docker compose logs --tail=50 frontend"
+ssh root@207.180.199.121 "docker compose logs --tail=50 caddy"
 
 # 5. Testar
 curl -s https://captacao.jurislaw.com.br/api/health
@@ -786,6 +828,40 @@ healthcheck:
 # Timezone
 ENV TZ=America/Sao_Paulo
 ```
+
+---
+
+## Changelog v3.0.0 — Security Hardening (2026-04-26)
+
+### Seguranca
+- JWT migrado de localStorage para httpOnly cookies (Secure, SameSite=Lax)
+- Criptografia Fernet (AES-128-CBC) para API keys em repouso (`crypto.py`)
+- Rate limiting via slowapi (30/min busca, 5/min login)
+- Sanitizacao anti-prompt-injection para agentes LLM (`sanitize.py`)
+- Security headers via Caddy (HSTS, X-Frame-Options, CSP, etc.)
+- Nginx substituido por Caddy (auto-TLS, HTTP/2, HTTP/3, zero config SSL)
+
+### Multi-tenant e RBAC
+- Tabela `users` em SQLite (superadmin, admin, user, viewer)
+- Tabela `tenants` com isolamento de dados por tenant
+- Tabela `audit_log` para cadeia de custodia
+- Todos os endpoints agora requerem autenticacao (exceto login e health)
+
+### Frontend (8 novas paginas)
+- `/configuracao-ia` — Configuracao de agentes IA
+- `/admin/usuarios` — Gestao de usuarios RBAC
+- `/admin/auditoria` — Cadeia de custodia
+- `/admin/tarifacao` — Tarifacao e consumo
+- `/admin/tenants` — Gestao de cadastros/tenants
+- `/admin/erros` — Monitoramento de erros
+- 9 novos componentes compartilhados (Toast, Modal, Skeleton, etc.)
+- 4 novos hooks (useOnlineStatus, useLocalStorage, useKeyboardShortcuts, useDebounce)
+
+### Backend (37+ routers, 120+ endpoints)
+- 20+ novos routers admin (usuarios, audit, tenants, metrics, etc.)
+- SecurityHeadersMiddleware + MetricsMiddleware
+- GZipMiddleware (min 500 bytes)
+- Docker: containers non-root, `no-new-privileges`, portas nao expostas ao host
 
 ---
 

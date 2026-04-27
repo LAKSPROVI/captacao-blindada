@@ -1,6 +1,6 @@
 # Guia do Usuario — Captacao Peticao Blindada
 
-> Versao: 2.1.0 | Atualizado: 2026-04-24 | Para: Usuarios finais (advogados, equipe juridica) | 231 implementações
+> Versao: 3.0.0 | Atualizado: 2026-04-26 | Para: Usuarios finais (advogados, equipe juridica) | 231 implementações
 
 ---
 
@@ -501,7 +501,7 @@ Para relatar problemas ou solicitar novas funcionalidades, entre em contato com 
 
 ---
 
-*Documento gerado em 2026-04-14 — Captacao Peticao Blindada v1.1.0*
+*Documento gerado em 2026-04-26 — Captacao Peticao Blindada v3.0.0*
 
 ---
 
@@ -602,3 +602,30 @@ Para relatar problemas ou solicitar novas funcionalidades, entre em contato com 
 - Cache em memória (5min TTL)
 - Paginação automática
 - Índices adicionais no banco
+
+---
+
+## Novas Funcionalidades (v3.0.0 — Security Hardening)
+
+### Seguranca Aprimorada
+- Login agora usa cookies seguros (httpOnly) — seu token nao fica mais exposto no navegador
+- Sessao mais segura: o sistema gerencia automaticamente a autenticacao
+- Conexao HTTPS automatica com certificado TLS (Caddy)
+- Protecao contra abuso: limite de tentativas de login (5/min) e buscas (30/min)
+
+### Novas Paginas de Administracao
+- **Configuracao IA** (`/configuracao-ia`) — Ajuste parametros dos agentes de inteligencia artificial
+- **Gestao de Usuarios** (`/admin/usuarios`) — Criar, editar, bloquear usuarios com diferentes niveis de acesso
+- **Auditoria** (`/admin/auditoria`) — Visualize todas as acoes realizadas no sistema (cadeia de custodia)
+- **Tarifacao** (`/admin/tarifacao`) — Acompanhe o consumo e uso do sistema
+- **Cadastros/Tenants** (`/admin/tenants`) — Gerencie escritorios e organizacoes
+- **Erros do Sistema** (`/admin/erros`) — Monitore erros e problemas do sistema
+
+### Melhorias de Interface
+- Notificacoes visuais (Toast) substituem alertas do navegador
+- Loading states com Skeleton (carregamento mais suave)
+- Modais para confirmacoes e formularios
+- Breadcrumbs para navegacao
+- Indicador de status online/offline
+- Atalhos de teclado (Ctrl+K para busca rapida)
+- Tooltips informativos em botoes e campos

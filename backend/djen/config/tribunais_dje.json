@@ -2,7 +2,7 @@
   "datajud": {
     "name": "DataJud API (CNJ)",
     "base_url": "https://api-publica.datajud.cnj.jus.br",
-    "api_key": "cDZHYzlZa0JadVREZDJCendQbXY6SkJlTzNjLV9TRENyQk1RdnFKZGRQdw==",
+    "api_key": "",
     "type": "elasticsearch",
     "tribunais": {
       "stj": "api_publica_stj",

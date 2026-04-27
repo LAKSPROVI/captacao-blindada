@@ -6,10 +6,12 @@ import logging
 from datetime import date, timedelta, datetime
 from typing import Optional, List
 
-from fastapi import APIRouter, HTTPException, Query, Body
+from fastapi import Request, APIRouter, Depends, HTTPException, Query, Body
 from pydantic import BaseModel
 
 from djen.api.database import Database
+from djen.api.auth import get_current_user, UserInDB
+from djen.api.ratelimit import limiter
 
 log = logging.getLogger("captacao.prazos")
 router = APIRouter(prefix="/api/prazos", tags=["Prazos Processuais"])
@@ -48,26 +50,10 @@ class PrazoRequest(BaseModel):
 
 
 @router.post("/criar", summary="Criar prazo processual")
-def criar_prazo(req: PrazoRequest):
+@limiter.limit("30/minute")
+def criar_prazo(request: Request, req: PrazoRequest):
     """Cria um novo prazo processual com cálculo automático de dias úteis."""
     db = get_db()
-    try:
-        db.conn.execute("""
-            CREATE TABLE IF NOT EXISTS prazos (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                numero_processo TEXT NOT NULL,
-                descricao TEXT NOT NULL,
-                tipo TEXT DEFAULT 'prazo',
-                data_inicio TEXT NOT NULL,
-                dias_uteis INTEGER NOT NULL,
-                data_fim TEXT NOT NULL,
-                status TEXT DEFAULT 'ativo',
-                criado_em TEXT DEFAULT (datetime('now', 'localtime'))
-            )
-        """)
-        db.conn.commit()
-    except Exception:
-        pass
     
     try:
         dt_inicio = date.fromisoformat(req.data_inicio)
@@ -93,30 +79,12 @@ def criar_prazo(req: PrazoRequest):
 
 
 @router.get("/listar", summary="Listar prazos")
-def listar_prazos(
-    status: str = Query("ativo", description="ativo, vencido, todos"),
+@limiter.limit("60/minute")
+def listar_prazos(request: Request, status: str = Query("ativo", description="ativo, vencido, todos"),
     limite: int = Query(100, ge=1, le=500),
 ):
     """Lista prazos processuais."""
     db = get_db()
-    try:
-        db.conn.execute("""
-            CREATE TABLE IF NOT EXISTS prazos (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                numero_processo TEXT NOT NULL,
-                descricao TEXT NOT NULL,
-                tipo TEXT DEFAULT 'prazo',
-                data_inicio TEXT NOT NULL,
-                dias_uteis INTEGER NOT NULL,
-                data_fim TEXT NOT NULL,
-                status TEXT DEFAULT 'ativo',
-                criado_em TEXT DEFAULT (datetime('now', 'localtime'))
-            )
-        """)
-        db.conn.commit()
-    except Exception:
-        pass
-    
     hoje = date.today().isoformat()
     
     if status == "ativo":
@@ -146,7 +114,8 @@ def listar_prazos(
 
 
 @router.get("/proximos", summary="Próximos prazos a vencer")
-def proximos_prazos(dias: int = Query(7, ge=1, le=30)):
+@limiter.limit("60/minute")
+def proximos_prazos(request: Request, dias: int = Query(7, ge=1, le=30)):
     """Lista prazos que vencem nos próximos X dias."""
     db = get_db()
     try:
@@ -169,7 +138,8 @@ def proximos_prazos(dias: int = Query(7, ge=1, le=30)):
 
 
 @router.delete("/{prazo_id}", summary="Remover prazo")
-def remover_prazo(prazo_id: int):
+@limiter.limit("30/minute")
+def remover_prazo(request: Request, prazo_id: int):
     """Remove um prazo."""
     db = get_db()
     db.conn.execute("DELETE FROM prazos WHERE id = ?", (prazo_id,))
@@ -178,7 +148,8 @@ def remover_prazo(prazo_id: int):
 
 
 @router.put("/{prazo_id}/concluir", summary="Marcar prazo como concluído")
-def concluir_prazo(prazo_id: int):
+@limiter.limit("30/minute")
+def concluir_prazo(request: Request, prazo_id: int):
     """Marca prazo como concluído."""
     db = get_db()
     db.conn.execute("UPDATE prazos SET status = 'concluido' WHERE id = ?", (prazo_id,))

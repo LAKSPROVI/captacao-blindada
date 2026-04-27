@@ -6,7 +6,7 @@ from datetime import timedelta
 from unittest.mock import patch
 
 import pytest
-from jose import jwt
+import jwt
 
 # Ensure predictable defaults for testing
 os.environ.setdefault("ADMIN_USERNAME", "admin")

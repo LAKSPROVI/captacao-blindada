@@ -35,23 +35,17 @@ class Settings:
     )
 
     # --- JWT Auth ---
-    JWT_SECRET_KEY: str = os.environ.get(
-        "JWT_SECRET_KEY",
-        "captacao-peticao-blindada-dev-secret-change-in-production",
-    )
+    JWT_SECRET_KEY: str = os.environ.get("JWT_SECRET_KEY", "")
     JWT_ALGORITHM: str = "HS256"
     JWT_EXPIRE_MINUTES: int = int(os.environ.get("JWT_EXPIRE_MINUTES", "60"))
 
     # --- Admin ---
     ADMIN_USERNAME: str = os.environ.get("ADMIN_USERNAME", "admin")
-    ADMIN_PASSWORD: str = os.environ.get("ADMIN_PASSWORD", "admin")
+    ADMIN_PASSWORD: str = os.environ.get("ADMIN_PASSWORD", "")
     ADMIN_FULL_NAME: str = os.environ.get("ADMIN_FULL_NAME", "Administrador")
 
     # --- DataJud ---
-    DATAJUD_API_KEY: str = os.environ.get(
-        "DATAJUD_API_KEY",
-        "cDZHYzlZa0JadVREZDJCendQbXY6SkJlTzNjLV9TRENyQk1RdnFKZGRQdw==",
-    )
+    DATAJUD_API_KEY: str = os.environ.get("DATAJUD_API_KEY", "")
     DATAJUD_BASE_URL: str = os.environ.get(
         "DATAJUD_BASE_URL",
         "https://api-publica.datajud.cnj.jus.br",

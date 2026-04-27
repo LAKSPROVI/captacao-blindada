@@ -1,6 +1,6 @@
 # Mapeamento do Sistema — Captacao Peticao Blindada
 
-> Versao: 2.1.0 | Atualizado: 2026-04-24 | Para: Equipe tecnica e gestao | 231 implementações | 120+ endpoints
+> Versao: 3.0.0 (Security Hardening) | Atualizado: 2026-04-26 | Para: Equipe tecnica e gestao | 250+ implementações | 120+ endpoints
 
 ---
 
@@ -13,37 +13,43 @@
                        (DNS A Record)
                              |
                   ┌──────────────────────┐
-                  │  Contabo VPS         │
-                  │  207.180.199.121     │
-                  │  Ubuntu / Docker     │
-                  │                      │
-                  │  ┌────────────────┐  │
-                  │  │  Nginx         │  │
-                  │  │  :80 → :443   │  │
-                  │  │  SSL/TLS      │  │
-                  │  └──────┬─────────┘  │
-                  │         │            │
-                  │    ┌────┴────┐       │
-                  │    │        │       │
-                  │  ┌─┴──┐  ┌─┴──┐    │
-                  │  │FE  │  │BE  │    │
-                  │  │8010│  │8001│    │
-                  │  └────┘  └─┬──┘    │
-                  │            │       │
-                  │     ┌──────┴──┐    │
-                  │     │ SQLite  │    │
-                  │     │ (vol)   │    │
-                  │     └─────────┘    │
-                  └──────────────────────┘
+                   │  Contabo VPS           │
+                   │  207.180.199.121       │
+                   │  Ubuntu / Docker       │
+                   │                        │
+                   │  ┌──────────────────┐  │
+                   │  │ Caddy (Rev Proxy)│  │
+                   │  │ :80 → :443 auto │  │
+                   │  │ TLS + Headers    │  │
+                   │  └────────┬─────────┘  │
+                   │           │            │
+                   │     ┌─────┴─────┐      │
+                   │     │          │      │
+                   │  ┌──┴───┐ ┌───┴──┐   │
+                   │  │ FE   │ │ BE   │   │
+                   │  │:3000 │ │:8000 │   │
+                   │  │intern│ │intern│   │
+                   │  └──────┘ └──┬───┘   │
+                   │              │       │
+                   │       ┌──────┴──┐    │
+                   │       │ SQLite  │    │
+                   │       │ (vol)   │    │
+                   │       └─────────┘    │
+                   └────────────────────────┘
                              │
                ┌─────────────┼─────────────┐
                │             │             │
           ┌────┴────┐  ┌────┴────┐  ┌────┴────┐
           │ DataJud │  │  DJEN   │  │ Bright  │
           │  (CNJ)  │  │  (CNJ)  │  │  Data   │
-          │ API Key │  │ via BR  │  │  Proxy  │
-          └─────────┘  │ Proxy   │  └─────────┘
-                       └─────────┘
+           │ API Key │  │ via BR  │  │  Proxy  │
+           │(encrypt)│  │verify=T │  │(encrypt)│
+           └─────────┘  └─────────┘  └─────────┘
+
+> Portas externas: 80 (HTTP redirect) e 443 (HTTPS) via Caddy.
+> Portas internas (3000, 8000) NAO expostas ao host — apenas via rede Docker interna.
+> API keys criptografadas em repouso via Fernet (crypto.py).
+> DJEN com verify=True para validacao SSL.
 ```
 
 ---
@@ -57,15 +63,17 @@
 | Framework | Next.js 15.1.0 + React 19 + TypeScript 5.7 |
 | UI | Tailwind CSS 3.4 + Radix UI + Lucide Icons |
 | HTTP Client | Axios 1.7.9 (ApiClient singleton) |
-| Container | Node 20 Alpine, porta 8010 |
+| Container | Node 20 Alpine, porta interna 3000 (NAO exposta) |
 | Build mode | Standalone (next build → standalone output) |
+| Autenticacao | httpOnly cookies (NAO usa localStorage para tokens) |
+| Security Headers | CSP, HSTS, X-Frame-Options, X-Content-Type-Options |
 
 #### Paginas (15 rotas)
 
 | Rota | Arquivo | Funcao |
 |------|---------|--------|
 | `/` | `app/page.tsx` | Dashboard — visao geral, stats, processos recentes |
-| `/login` | `app/login/page.tsx` | Autenticacao com usuario/senha |
+| `/login` | `app/login/page.tsx` | Autenticacao com usuario/senha (httpOnly cookie) |
 | `/processo` | `app/processo/page.tsx` | Analise de processos com IA |
 | `/processo/[numero]` | `app/processo/[numero]/page.tsx` | Detalhe de processo especifico |
 | `/busca` | `app/busca/page.tsx` | Busca unificada em multiplas fontes |
@@ -124,12 +132,16 @@
 | Atributo | Valor |
 |----------|-------|
 | Framework | FastAPI + Uvicorn + Pydantic v2 |
-| Linguagem | Python 3.12 |
-| Container | python:3.12-slim, porta 8001, user non-root |
-| Banco | SQLite com WAL mode |
+| Linguagem | Python 3.11+ |
+| Container | python:3.11-slim-bookworm, porta interna 8000 (NAO exposta), user non-root |
+| Auth | PyJWT (HS256) + httpOnly cookies + bcrypt |
+| Encryption | Fernet (AES) para API keys em repouso (crypto.py) |
+| Sanitizacao | Prevencao de prompt injection (sanitize.py) |
+| Banco | SQLite com WAL mode + isolamento multi-tenant |
 | Scheduler | APScheduler (3 jobs: Monitor DJEN 10min, DataJud 6h, Captação 30min) |
+| Rate Limiting | slowapi (GET 60/min, POST 30/min, exports 5/min) |
 
-#### Endpoints (45+ total, 6 routers)
+#### Endpoints (120+ total, 37+ routers — TODOS com autenticacao)
 
 | Router | Prefixo | Endpoints | Funcao |
 |--------|---------|-----------|--------|
@@ -138,8 +150,15 @@
 | `monitor.py` | `/api/monitor` | 7 | CRUD de monitorados + publicacoes + stats |
 | `djen_router.py` | `/api/djen` | 7 | Busca DJEN, publicacoes, tribunais |
 | `datajud.py` | `/api/datajud` | 4 | Busca DataJud, detalhes de processo |
-| `health.py` | `/api/health` | 1 | Health check com status de fontes |
-| `auth.py` | `/api/auth` | 3 | Login, me, token refresh |
+| `health.py` | `/api/health` | 1 | Health check (unico sem auth) |
+| `auth.py` | `/api/auth` | 4 | Login, me, refresh, logout (httpOnly cookie) |
+| `validation.py` | `/api/validation` | 5 | Validacao CNJ, OAB, tribunais |
+| `webhook.py` | `/api/webhooks` | 5 | CRUD + trigger de webhooks |
+| `metrics.py` | `/api/metrics` | 4 | Metricas JSON, Prometheus, health |
+| `admin/*.py` | `/api/admin/*` | 20+ | Usuarios, auditoria, tarifacao, tenants, erros |
+| `ia_config.py` | `/api/ia-config` | 5+ | Configuracao de modelos IA (keys criptografadas) |
+
+> Todos os endpoints (exceto /health) exigem `Depends(get_current_user)` e filtram por `tenant_id`.
 
 #### Detalhamento de Endpoints por Router
 
@@ -540,31 +559,38 @@ Requisicao de Analise
 
 ---
 
-### 2.8 Autenticacao (JWT)
+### 2.8 Autenticacao (JWT + httpOnly Cookies)
 
 ```
-Login: POST /api/auth/token
-       (form-urlencoded: username + password)
+Login: POST /api/auth/login
+       (JSON: username + password)
               │
               ▼
-       Verifica bcrypt hash contra user store
+       Verifica bcrypt hash contra users table
               │
               ▼
-       Gera JWT (HS256, 60min expiry)
+       Gera JWT (HS256, 60min expiry, PyJWT)
               │
               ▼
-       Retorna: { access_token, token_type }
+       Define cookie httpOnly:
+       Set-Cookie: access_token=<jwt>;
+         HttpOnly; Secure; SameSite=Lax; Path=/
               │
               ▼
-       Frontend armazena em localStorage
+       Frontend NAO armazena token (cookie automatico)
               │
               ▼
-       Todas as requests incluem:
-       Authorization: Bearer <token>
+       Todas as requests enviam cookie automaticamente
               │
               ▼
-       Backend valida token via get_current_user()
+       Backend valida via get_current_user():
+       1. Verifica cookie httpOnly
+       2. Fallback: header Authorization: Bearer <token>
+       3. Verifica tenant_id do usuario
 ```
+
+> IMPORTANTE: Tokens NAO sao armazenados em localStorage (vulneravel a XSS).
+> Cookies httpOnly sao inacessiveis via JavaScript.
 
 ---
 
@@ -600,44 +626,64 @@ Publicacao encontrada (captacao ou monitor)
 # docker-compose.yml (simplificado)
 
 services:
+  caddy:
+    image: caddy:2-alpine
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile
+      - caddy_data:/data
+    restart: unless-stopped
+    security_opt: ["no-new-privileges:true"]
+
   backend:
     build: Dockerfile.backend
-    ports: "127.0.0.1:8001:8000"
+    # Porta NAO exposta ao host — apenas via rede Docker
     volumes: captacao-data:/app/data
     env_file: .env
+    user: "1000"
     restart: unless-stopped
+    security_opt: ["no-new-privileges:true"]
 
   frontend:
     build: Dockerfile.frontend
-    ports: "127.0.0.1:8010:3000"
+    # Porta NAO exposta ao host — apenas via rede Docker
     depends_on: backend
     environment:
       NEXT_PUBLIC_API_URL: https://captacao.jurislaw.com.br
     restart: unless-stopped
+    security_opt: ["no-new-privileges:true"]
 
 volumes:
   captacao-data:    # SQLite + dados persistentes
+  caddy_data:       # Certificados TLS
 ```
 
-### 3.2 Nginx (Reverse Proxy)
+### 3.2 Caddy (Reverse Proxy + Auto-TLS)
 
 ```
-Internet → :443 (SSL)
+Internet → Caddy (:80 redirect → :443 HTTPS)
               │
          ┌────┴────────────────────────┐
-         │  location / {               │
-         │    proxy_pass :8010;        │  ← Frontend
-         │  }                          │
+         │  captacao.jurislaw.com.br { │
+         │    reverse_proxy /api/*     │
+         │      backend:8000           │  ← Backend
          │                             │
-         │  location /api/ {           │
-         │    proxy_pass :8001;        │  ← Backend
-         │  }                          │
+         │    reverse_proxy /*         │
+         │      frontend:3000          │  ← Frontend
          │                             │
-         │  location /ws/ {            │
-         │    proxy_pass :8001;        │  ← WebSocket
-         │    upgrade WebSocket;       │
+         │    header {                 │
+         │      Strict-Transport-Sec.  │
+         │      X-Frame-Options DENY   │
+         │      X-Content-Type nosniff │
+         │    }                        │
          │  }                          │
          └─────────────────────────────┘
+
+> TLS automatico via Let's Encrypt (zero config)
+> HTTP/2 e HTTP/3 habilitados por padrao
+> Security headers injetados pelo Caddy
 ```
 
 ### 3.3 Variaveis de Ambiente
@@ -645,17 +691,23 @@ Internet → :443 (SSL)
 | Variavel | Onde | Descricao |
 |----------|------|-----------|
 | `ADMIN_USERNAME` | .env | Usuario admin |
-| `ADMIN_PASSWORD` | .env | Senha admin (bcrypt) |
-| `JWT_SECRET_KEY` | .env | Chave secreta para tokens JWT |
-| `DATAJUD_API_KEY` | .env | API Key do DataJud (CNJ) |
-| `BRIGHT_DATA_PROXY_USERNAME` | .env | Credencial Bright Data |
-| `BRIGHT_DATA_PROXY_PASSWORD` | .env | Credencial Bright Data |
-| `BRIGHT_DATA_API_KEY` | .env | API Key Bright Data |
+| `ADMIN_PASSWORD` | .env | Senha admin (SEM valor padrao) |
+| `JWT_SECRET_KEY` | .env | Chave secreta JWT (app recusa iniciar sem) |
+| `ENCRYPTION_KEY` | .env | Chave Fernet para criptografia de API keys |
+| `DATAJUD_API_KEY` | .env | API Key do DataJud (CNJ, criptografada) |
+| `BRIGHTDATA_PROXY_URL` | .env | URL proxy residencial Bright Data |
+| `BRIGHTDATA_API_KEY` | .env | API Key Bright Data (criptografada) |
+| `BRIGHTDATA_SCRAPING_BROWSER_WS` | .env | WebSocket Scraping Browser |
 | `NEXT_PUBLIC_API_URL` | .env / docker | URL publica da API |
-| `DATABASE_PATH` | settings.py | Caminho do SQLite (default: /app/data/) |
+| `DOMAIN` | .env | Dominio para TLS do Caddy |
+| `ALLOWED_ORIGINS` | .env | Origens CORS permitidas |
+| `IS_PRODUCTION` | .env | `true` em producao |
+| `CAPTACAO_DB_PATH` | settings.py | Caminho do SQLite (default: /app/data/) |
 | `LOG_LEVEL` | settings.py | Nivel de log (INFO) |
-| `CORS_ORIGINS` | settings.py | Origens CORS permitidas |
 | `SCHEDULER_ENABLED` | settings.py | Habilita APScheduler |
+
+> IMPORTANTE: `.env` esta no `.gitignore`. NUNCA commitar credenciais.
+> `.env.example` contem template sem valores reais.
 
 ---
 
@@ -775,8 +827,10 @@ captacao-blindada/
 │       ├── notifier.py               # WhatsApp + Email notifications
 │       ├── api/
 │       │   ├── app.py                # FastAPI app, lifespan, CORS, scheduler
-│       │   ├── auth.py               # JWT, bcrypt, login endpoint
-│       │   ├── database.py           # SQLite CRUD, 7 tabelas, ~630 linhas
+│       │   ├── auth.py               # JWT httpOnly cookies, bcrypt, RBAC
+│       │   ├── crypto.py             # Fernet encryption para API keys
+│       │   ├── ratelimit.py          # Rate limiting (slowapi)
+│       │   ├── database.py           # SQLite CRUD, 27 tabelas, multi-tenant
 │       │   ├── schemas.py            # 30+ Pydantic models + enums
 │       │   ├── resultado_repository.py # UPSERT de resultados de analise
 │       │   └── routers/
@@ -785,7 +839,13 @@ captacao-blindada/
 │       │       ├── djen_router.py    # 7 endpoints
 │       │       ├── health.py         # 1 endpoint
 │       │       ├── monitor.py        # 7 endpoints
-│       │       └── processo.py       # 14 endpoints + WebSocket
+│       │       ├── processo.py       # 14 endpoints + WebSocket
+│       │       ├── validation.py     # 5 endpoints (CNJ, OAB)
+│       │       ├── webhook.py        # 5 endpoints
+│       │       ├── metrics.py        # 4 endpoints
+│       │       ├── ia_config.py      # 5+ endpoints (IA config)
+│       │       ├── admin/            # 20+ endpoints (usuarios, audit, tenants)
+│       │       └── ... (37+ routers total)
 │       ├── sources/
 │       │   ├── base.py               # BaseSource ABC + PublicacaoResult
 │       │   ├── datajud.py            # DataJud API (60+ tribunais)
@@ -799,6 +859,7 @@ captacao-blindada/
 │       │   ├── orchestrator.py       # Registro + orquestracao de agentes
 │       │   ├── specialized.py        # 14 agentes heuristicos (6 camadas)
 │       │   ├── ml_agents.py          # 4 agentes LLM com fallback
+│       │   ├── sanitize.py           # Sanitizacao anti-prompt-injection
 │       │   ├── pipeline_service.py   # Pipeline facade, cache L1, tracker
 │       │   └── captacao_service.py   # Servico de captacao automatizada
 │       ├── config/
@@ -833,8 +894,9 @@ captacao-blindada/
 │   ├── GUIA_USUARIO.md               # Guia do usuario
 │   └── MAPEAMENTO_SISTEMA.md         # Este documento
 │
-├── docker-compose.yml                # 2 services + 1 volume
-├── Dockerfile.backend                # Python 3.12-slim, non-root
+├── docker-compose.yml                # 3 services (caddy + backend + frontend) + 2 volumes
+├── Caddyfile                         # Reverse proxy config (auto-TLS)
+├── Dockerfile.backend                # Python 3.11-slim-bookworm, non-root
 ├── Dockerfile.frontend               # Node 20-alpine, standalone
 ├── Dockerfile                        # All-in-one (alternativo)
 ├── Makefile                          # 12 comandos dev/test/deploy
@@ -854,15 +916,17 @@ captacao-blindada/
 | Total de arquivos Python (backend) | ~49 |
 | Total de linhas Python | ~8.700 |
 | Total de arquivos TypeScript (frontend) | ~16 |
-| Endpoints REST | 45+ |
+| Endpoints REST | 120+ |
 | WebSockets | 2 |
-| Tabelas SQLite | 7 |
-| Agentes IA | 14 (11 heuristicos + 4 ML) |
+| Tabelas SQLite | 27 |
+| Agentes IA | 14 (10 heuristicos + 4 ML) |
 | Fontes de dados | 7 |
-| Componentes React | 6 |
-| Paginas Next.js | 7 |
-| Testes backend | 9 arquivos |
+| Componentes React | 16 |
+| Paginas Next.js | 15 |
+| Testes backend | 9 arquivos (288/294 passando) |
 | Testes E2E | 8 specs Playwright |
+| Routers backend | 37+ |
+| Security layers | 7 (auth, tenant, rate limit, crypto, sanitize, headers, TLS) |
 
 ---
 
@@ -875,10 +939,14 @@ captacao-blindada/
 | 3 | DEJT scraper pode quebrar se layout mudar | Risco | Medio |
 | 4 | JusBrasil scraping depende de Bright Data Web Unlocker | Risco | Medio |
 | 5 | Notificacoes WhatsApp/Email nao configuradas | Pendente | Medio |
-| 6 | Sem rate limiting nos endpoints | Pendente | Baixo |
+| 6 | ~~Sem rate limiting nos endpoints~~ | Resolvido v3.0.0 | ~~Baixo~~ |
 | 7 | Sem backup automatico do SQLite | Pendente | Alto |
 | 8 | Agentes ML (LLM) dependem de API externa | Risco | Baixo (fallback) |
-| 9 | Sem multi-tenancy (usuario unico admin) | Design | Medio |
+| 9 | ~~Sem multi-tenancy (usuario unico admin)~~ | Resolvido v3.0.0 | ~~Medio~~ |
+| 10 | ~~JWT em localStorage (vulneravel a XSS)~~ | Resolvido v3.0.0 (httpOnly) | ~~Alto~~ |
+| 11 | ~~Nginx manual SSL~~ | Resolvido v3.0.0 (Caddy auto-TLS) | ~~Medio~~ |
+| 12 | ~~Sem criptografia de API keys~~ | Resolvido v3.0.0 (Fernet) | ~~Alto~~ |
+| 13 | ~~Sem sanitizacao anti-prompt-injection~~ | Resolvido v3.0.0 | ~~Alto~~ |
 
 ---
 
@@ -886,6 +954,7 @@ captacao-blindada/
 
 | Data | Mudanca |
 |------|---------|
+| 2026-04-26 | v3.0.0 Security Hardening: Caddy auto-TLS, httpOnly cookies, Fernet encryption, rate limiting, multi-tenant, sanitizacao |
 | 2026-04-14 | Corrigidos 12 bugs criticos no backend e frontend |
 | 2026-04-14 | Construida pagina de Captacao Automatizada (~1010 linhas) |
 | 2026-04-14 | Fix proxy DJEN via RouteManager (djen_api → residential_proxy) |

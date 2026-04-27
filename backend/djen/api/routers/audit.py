@@ -3,13 +3,14 @@ import json
 import csv
 import io
 from typing import List, Dict, Any
-from fastapi import APIRouter, Depends, HTTPException, status, Query
+from fastapi import Request, APIRouter, Depends, HTTPException, status, Query
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
 from djen.api.auth import get_current_user, require_role, UserInDB
 from djen.api.database import get_database
 from djen.api.audit import _hash_data
+from djen.api.ratelimit import limiter
 
 log = logging.getLogger("captacao.routers.audit")
 
@@ -28,8 +29,8 @@ class AuditLogResponse(BaseModel):
     criado_em: str
 
 @router.get("/logs", response_model=List[AuditLogResponse])
-def listar_auditoria(
-    limit: int = 500,
+@limiter.limit("60/minute")
+def listar_auditoria(request: Request, limit: int = 500,
     offset: int = 0,
     action: str = Query(None, description="Filtrar por ação"),
     entity_type: str = Query(None, description="Filtrar por tipo de entidade"),
@@ -56,7 +57,8 @@ def listar_auditoria(
 
 
 @router.get("/stats")
-def audit_stats(current_user: UserInDB = Depends(require_role("master"))):
+@limiter.limit("60/minute")
+def audit_stats(request: Request, current_user: UserInDB = Depends(require_role("master"))):
     """(Master) Estatísticas da cadeia de custódia."""
     db = get_database()
     
@@ -87,8 +89,8 @@ def audit_stats(current_user: UserInDB = Depends(require_role("master"))):
 
 
 @router.get("/export/csv")
-def exportar_csv(
-    limit: int = 10000,
+@limiter.limit("5/minute")
+def exportar_csv(request: Request, limit: int = 10000,
     action: str = Query(None),
     entity_type: str = Query(None),
     current_user: UserInDB = Depends(require_role("master"))
@@ -139,8 +141,8 @@ def exportar_csv(
 
 
 @router.get("/export/json")
-def exportar_json(
-    limit: int = 10000,
+@limiter.limit("5/minute")
+def exportar_json(request: Request, limit: int = 10000,
     action: str = Query(None),
     entity_type: str = Query(None),
     current_user: UserInDB = Depends(require_role("master"))
@@ -173,7 +175,8 @@ def exportar_json(
 
 
 @router.get("/verify")
-def verificar_cadeia(current_user: UserInDB = Depends(require_role("master"))):
+@limiter.limit("60/minute")
+def verificar_cadeia(request: Request, current_user: UserInDB = Depends(require_role("master"))):
     """Valida a cadeia de hashes do banco para garantir integridade e que logs nao foram apagados ou editados manualmente."""
     db = get_database()
     rows = db.conn.execute("SELECT * FROM audit_logs ORDER BY id ASC").fetchall()

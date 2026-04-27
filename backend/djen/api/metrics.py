@@ -109,8 +109,8 @@ class MetricsCollector:
             # Percentis (simplificado)
             sorted_dur = sorted(durations)
             p50 = sorted_dur[len(sorted_dur)//2] if sorted_dur else 0
-            p95 = sorted_dur[int(len(sorted_dur)*0.95)] if sorted_dur else 0
-            p99 = sorted_dur[int(len(sorted_dur)*0.99)] if sorted_dur else 0
+            p95 = sorted_dur[min(int(len(sorted_dur)*0.95), len(sorted_dur)-1)] if sorted_dur else 0
+            p99 = sorted_dur[min(int(len(sorted_dur)*0.99), len(sorted_dur)-1)] if sorted_dur else 0
             
             return {
                 "requests_total": self._requests_total,
@@ -137,33 +137,38 @@ class MetricsCollector:
 # =============================================================================
 
 def format_prometheus(metrics: MetricsCollector) -> str:
-    """Formata métricas em formato Prometheus."""
+    """Formata métricas em formato Prometheus válido."""
     lines = []
     stats = metrics.get_stats()
     
-    # Requests
+    lines.append("# HELP api_requests_total Total de requisicoes recebidas")
+    lines.append("# TYPE api_requests_total counter")
     lines.append(f'api_requests_total {stats["requests_total"]}')
-    lines.append(f'api_requests_per_minute {stats["requests_per_minute"]}')
     
-    # Duration (em segundos)
+    lines.append("# HELP api_requests_errors_total Total de erros")
+    lines.append("# TYPE api_requests_errors_total counter")
+    lines.append(f'api_requests_errors_total {stats["errors_total"]}')
+    
+    lines.append("# HELP api_request_duration_seconds Duracao das requisicoes")
+    lines.append("# TYPE api_request_duration_seconds summary")
     lines.append(f'api_request_duration_seconds_sum {stats["request_duration_avg_ms"] / 1000}')
     lines.append(f'api_request_duration_seconds_count {stats["requests_total"]}')
     
-    # Errors
-    lines.append(f'api_requests_errors_total {stats["errors_total"]}')
-    lines.append(f'api_error_rate {stats["error_rate"]}')
-    
-    # Captações
+    lines.append("# HELP captacao_total Total de captacoes criadas")
+    lines.append("# TYPE captacao_total gauge")
     lines.append(f'captacao_total {stats["captacoes_total"]}')
     lines.append(f'captacao_ativas {stats["captacoes_ativas"]}')
+    
+    lines.append("# HELP publicacao_total Total de publicacoes")
+    lines.append("# TYPE publicacao_total counter")
     lines.append(f'publicacao_total {stats["publicacoes_total"]}')
     lines.append(f'publicacao_hoje {stats["publicacoes_hoje"]}')
     
-    # Por fonte
     for fonte, count in stats["buscas_por_fonte"].items():
         lines.append(f'busca_fonte{{fonte="{fonte}"}} {count}')
     
-    # Uptime
+    lines.append("# HELP process_uptime_seconds Tempo de atividade do processo")
+    lines.append("# TYPE process_uptime_seconds gauge")
     lines.append(f'process_uptime_seconds {stats["uptime_seconds"]}')
     
     return "\n".join(lines)
@@ -191,9 +196,27 @@ def get_metrics() -> MetricsCollector:
 # =============================================================================
 
 def track_request(endpoint: str):
-    """Decorator para tracking de requisições."""
+    """Decorator para tracking de requisições (suporta sync e async)."""
+    import functools
+    import asyncio
     def decorator(func):
-        def wrapper(*args, **kwargs):
+        @functools.wraps(func)
+        async def async_wrapper(*args, **kwargs):
+            start = time.time()
+            try:
+                result = await func(*args, **kwargs)
+                get_metrics().increment_requests()
+                get_metrics().increment_requests_endpoint(endpoint)
+                return result
+            except Exception as e:
+                get_metrics().increment_errors(type(e).__name__)
+                raise
+            finally:
+                duration = (time.time() - start) * 1000
+                get_metrics().record_duration(duration)
+
+        @functools.wraps(func)
+        def sync_wrapper(*args, **kwargs):
             start = time.time()
             try:
                 result = func(*args, **kwargs)
@@ -206,8 +229,11 @@ def track_request(endpoint: str):
             finally:
                 duration = (time.time() - start) * 1000
                 get_metrics().record_duration(duration)
-        return wrapper
+
+        if asyncio.iscoroutinefunction(func):
+            return async_wrapper
+        return sync_wrapper
     return decorator
 
 
-log.info("Metrics collector configurado")
+log.debug("Metrics collector configurado")

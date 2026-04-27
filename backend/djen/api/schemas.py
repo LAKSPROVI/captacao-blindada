@@ -7,7 +7,8 @@ from datetime import date, datetime
 from enum import Enum
 from typing import List, Optional, Dict, Any
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
+import re as _re
 
 
 # =========================================================================
@@ -36,6 +37,58 @@ class TipoComunicacao(str, Enum):
     citacao = "C"
     intimacao = "I"
     edital = "E"
+
+
+# =========================================================================
+# Validators Reutilizaveis
+# =========================================================================
+
+_DATE_YYYY_MM_DD = _re.compile(r"^\d{4}-\d{2}-\d{2}$")
+_DATE_DD_MM_YYYY = _re.compile(r"^\d{2}/\d{2}/\d{4}$")
+_TIME_HH_MM = _re.compile(r"^\d{2}:\d{2}$")
+_VALID_UFS = {
+    "AC", "AL", "AM", "AP", "BA", "CE", "DF", "ES", "GO", "MA",
+    "MG", "MS", "MT", "PA", "PB", "PE", "PI", "PR", "RJ", "RN",
+    "RO", "RR", "RS", "SC", "SE", "SP", "TO",
+}
+
+def _validate_date_str(v: str, field_name: str) -> str:
+    """Valida formato de data YYYY-MM-DD ou DD/MM/AAAA."""
+    if v is None:
+        return v
+    if not (_DATE_YYYY_MM_DD.match(v) or _DATE_DD_MM_YYYY.match(v)):
+        raise ValueError(f"{field_name}: formato invalido. Use YYYY-MM-DD ou DD/MM/AAAA")
+    return v
+
+def _validate_time_str(v: str, field_name: str) -> str:
+    """Valida formato de horario HH:MM."""
+    if v is None:
+        return v
+    if not _TIME_HH_MM.match(v):
+        raise ValueError(f"{field_name}: formato invalido. Use HH:MM")
+    parts = v.split(":")
+    h, m = int(parts[0]), int(parts[1])
+    if h < 0 or h > 23 or m < 0 or m > 59:
+        raise ValueError(f"{field_name}: horario fora do intervalo valido (00:00-23:59)")
+    return v
+
+def _validate_dias_semana(v: str) -> str:
+    """Valida dias da semana (1-7 separados por virgula)."""
+    if v is None:
+        return v
+    for d in v.split(","):
+        d = d.strip()
+        if d not in {"1", "2", "3", "4", "5", "6", "7"}:
+            raise ValueError(f"dias_semana: valor '{d}' invalido. Use 1-7 (1=seg, 7=dom)")
+    return v
+
+def _validate_uf(v: str) -> str:
+    """Valida UF brasileira."""
+    if v is None:
+        return v
+    if v.upper() not in _VALID_UFS:
+        raise ValueError(f"UF '{v}' invalida")
+    return v.upper()
 
 
 class StatusMonitorado(str, Enum):
@@ -76,6 +129,11 @@ class BuscaDatajudRequest(BaseModel):
     data_fim: Optional[str] = Field(None, description="Data fim YYYY-MM-DD", json_schema_extra={"example": "2024-12-31"})
     tamanho: int = Field(10, ge=1, le=100, description="Quantidade de resultados")
 
+    @field_validator("data_inicio", "data_fim", mode="before")
+    @classmethod
+    def validate_dates(cls, v):
+        return _validate_date_str(v, "data") if v else v
+
 
 class BuscaDjenRequest(BaseModel):
     """Busca no DJEN (comunicacoes processuais - texto completo)."""
@@ -115,6 +173,16 @@ class MonitoradoCreateRequest(BaseModel):
     horario_inicio: str = Field("06:00", description="Nao buscar antes deste horario (HH:MM)")
     horario_fim: str = Field("23:00", description="Nao buscar depois deste horario (HH:MM)")
     dias_semana: str = Field("1,2,3,4,5", description="Dias permitidos para busca (1=seg..7=dom)")
+
+    @field_validator("horario_inicio", "horario_fim", mode="before")
+    @classmethod
+    def validate_horarios(cls, v):
+        return _validate_time_str(v, "horario") if v else v
+
+    @field_validator("dias_semana", mode="before")
+    @classmethod
+    def validate_dias(cls, v):
+        return _validate_dias_semana(v) if v else v
 
 
 class MonitoradoUpdateRequest(BaseModel):
@@ -261,7 +329,7 @@ class CaptacaoCreateRequest(BaseModel):
     classe_codigo: Optional[int] = Field(None, description="Codigo da classe processual CNJ (tipo_busca=classe)")
     assunto_codigo: Optional[int] = Field(None, description="Codigo do assunto CNJ (tipo_busca=assunto)")
     orgao_id: Optional[int] = Field(None, description="ID do orgao julgador (DJEN)")
-    tipo_comunicacao: Optional[str] = Field(None, description="I=intimacao, C=citacao, E=edital, NULL=todos")
+    tipo_comunicacao: Optional[TipoComunicacao] = Field(None, description="I=intimacao, C=citacao, E=edital, NULL=todos")
     data_inicio: Optional[str] = Field(None, description="Data inicio (YYYY-MM-DD ou DD/MM/AAAA)")
     data_fim: Optional[str] = Field(None, description="Data fim (NULL=hoje)")
 
@@ -286,6 +354,26 @@ class CaptacaoCreateRequest(BaseModel):
     notificar_email: bool = Field(False, description="Enviar notificacao email")
     prioridade: PrioridadeCaptacao = Field(PrioridadeCaptacao.normal, description="Prioridade de execucao")
 
+    @field_validator("horario_inicio", "horario_fim", mode="before")
+    @classmethod
+    def validate_horarios(cls, v):
+        return _validate_time_str(v, "horario") if v else v
+
+    @field_validator("dias_semana", mode="before")
+    @classmethod
+    def validate_dias(cls, v):
+        return _validate_dias_semana(v) if v else v
+
+    @field_validator("data_inicio", "data_fim", mode="before")
+    @classmethod
+    def validate_dates(cls, v):
+        return _validate_date_str(v, "data") if v else v
+
+    @field_validator("uf_oab", mode="before")
+    @classmethod
+    def validate_uf(cls, v):
+        return _validate_uf(v) if v else v
+
 
 class CaptacaoUpdateRequest(BaseModel):
     """Atualizar captacao existente."""
@@ -303,7 +391,7 @@ class CaptacaoUpdateRequest(BaseModel):
     classe_codigo: Optional[int] = None
     assunto_codigo: Optional[int] = None
     orgao_id: Optional[int] = None
-    tipo_comunicacao: Optional[str] = None
+    tipo_comunicacao: Optional[TipoComunicacao] = None
     data_inicio: Optional[str] = None
     data_fim: Optional[str] = None
     fontes: Optional[List[FonteBusca]] = None
@@ -330,7 +418,7 @@ class CaptacaoPreviewRequest(BaseModel):
     classe_codigo: Optional[int] = None
     assunto_codigo: Optional[int] = None
     orgao_id: Optional[int] = None
-    tipo_comunicacao: Optional[str] = None
+    tipo_comunicacao: Optional[TipoComunicacao] = None
     data_inicio: Optional[str] = None
     data_fim: Optional[str] = None
     fontes: List[FonteBusca] = Field(default=[FonteBusca.datajud, FonteBusca.djen_api])
@@ -445,7 +533,7 @@ class TenantResponse(BaseModel):
 class TenantCreateRequest(BaseModel):
     nome: str = Field(..., min_length=2)
     ativo: bool = True
-    saldo_tokens: int = 0
+    saldo_tokens: int = Field(0, ge=0)
 
 class TenantUpdateRequest(BaseModel):
     nome: Optional[str] = None
@@ -463,9 +551,9 @@ class UserResponse(BaseModel):
 class UserCreateRequest(BaseModel):
     tenant_id: Optional[int] = None
     username: str
-    password: str
+    password: str = Field(..., min_length=8, description="Senha com minimo 8 caracteres")
     full_name: str
-    role: str = "viewer"
+    role: Optional[str] = Field("editor", pattern=r"^(master|admin|editor|viewer)$", description="Papel do usuario")
 
 class UserUpdateRequest(BaseModel):
     full_name: Optional[str] = None

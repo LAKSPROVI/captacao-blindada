@@ -6,10 +6,12 @@ Endpoints para configurar e gerenciar webhooks.
 import logging
 from typing import Optional, List
 
-from fastapi import APIRouter, HTTPException, Body
+from fastapi import Request, APIRouter, Depends, HTTPException, Body
 from pydantic import BaseModel
 from pydantic import Field
+from djen.api.auth import get_current_user, UserInDB
 
+from djen.api.ratelimit import limiter
 from djen.api.webhook import (
     get_webhook_manager,
     WebhookEvent,
@@ -41,7 +43,8 @@ class TriggerTestRequest(BaseModel):
 # =============================================================================
 
 @router.get("", summary="Listar webhooks")
-def listar_webhooks():
+@limiter.limit("60/minute")
+def listar_webhooks(request: Request):
     """Lista todos os webhooks configurados."""
     manager = get_webhook_manager()
     webhooks = manager.get_webhooks()
@@ -54,6 +57,7 @@ def listar_webhooks():
 
 
 @router.post("", summary="Criar webhook")
+@limiter.limit("30/minute")
 def criar_webhook(request: CreateWebhookRequest, webhook_id: str = Body(..., description="ID único")):
     """Cria um novo webhook."""
     manager = get_webhook_manager()
@@ -87,7 +91,8 @@ def criar_webhook(request: CreateWebhookRequest, webhook_id: str = Body(..., des
 
 
 @router.delete("/{webhook_id}", summary="Remover webhook")
-def remover_webhook(webhook_id: str):
+@limiter.limit("30/minute")
+def remover_webhook(request: Request, webhook_id: str):
     """Remove um webhook."""
     manager = get_webhook_manager()
     success = manager.remove_webhook(webhook_id)
@@ -102,6 +107,7 @@ def remover_webhook(webhook_id: str):
 
 
 @router.post("/test", summary="Testar webhook")
+@limiter.limit("5/minute")
 def testar_webhook(request: TriggerTestRequest):
     """Envia um teste para URL especificada."""
     from djen.api.webhook import WebhookManager
@@ -125,8 +131,8 @@ def testar_webhook(request: TriggerTestRequest):
 
 
 @router.post("/trigger/{event}", summary="Disparar webhook manualmente")
-def Disparar(
-    event: str,
+@limiter.limit("30/minute")
+def Disparar(request: Request, event: str,
     data: dict = Body(..., description="Dados a enviar"),
 ):
     """Dispara webhook para evento específico."""

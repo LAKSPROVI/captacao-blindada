@@ -1,10 +1,11 @@
 import logging
 from typing import List
-from fastapi import APIRouter, Depends, HTTPException, Body
+from fastapi import Request, APIRouter, Depends, HTTPException, Body
 from pydantic import BaseModel
 
 from djen.api.auth import get_current_user, require_role, UserInDB
 from djen.api.database import get_database
+from djen.api.ratelimit import limiter
 
 log = logging.getLogger("captacao.routers.errors")
 
@@ -23,7 +24,8 @@ class SystemErrorResponse(BaseModel):
     criado_em: str
 
 @router.get("/", response_model=List[SystemErrorResponse])
-def listar_erros(limit: int = 100, offset: int = 0, status: str = "aberto", current_user: UserInDB = Depends(require_role("master"))):
+@limiter.limit("60/minute")
+def listar_erros(request: Request, limit: int = 100, offset: int = 0, status: str = "aberto", current_user: UserInDB = Depends(require_role("master"))):
     """(Master) Lista erros do sistema, agrupados por abertos ou fechados."""
     db = get_database()
     query = "SELECT * FROM system_errors"
@@ -41,7 +43,8 @@ def listar_erros(limit: int = 100, offset: int = 0, status: str = "aberto", curr
 
 
 @router.post("/notify-critical", summary="Notificar erro crítico por email")
-def notify_critical(error_id: int = Body(...), current_user: UserInDB = Depends(require_role("master"))):
+@limiter.limit("30/minute")
+def notify_critical(request: Request, error_id: int = Body(...), current_user: UserInDB = Depends(require_role("master"))):
     """Envia notificação por email sobre erro crítico."""
     db = get_database()
     error = db.conn.execute("SELECT * FROM system_errors WHERE id = ?", (error_id,)).fetchone()
@@ -64,7 +67,8 @@ def notify_critical(error_id: int = Body(...), current_user: UserInDB = Depends(
 
 
 @router.get("/recent", response_model=List[SystemErrorResponse])
-def listar_erros_recentes(limit: int = 20, current_user: UserInDB = Depends(require_role("master"))):
+@limiter.limit("60/minute")
+def listar_erros_recentes(request: Request, limit: int = 20, current_user: UserInDB = Depends(require_role("master"))):
     """(Master) Lista erros recentes do sistema."""
     db = get_database()
     rows = db.conn.execute(
@@ -73,7 +77,8 @@ def listar_erros_recentes(limit: int = 20, current_user: UserInDB = Depends(requ
     return [SystemErrorResponse(**dict(r)) for r in rows]
 
 @router.post("/{error_id}/resolve")
-def resolver_erro(error_id: int, current_user: UserInDB = Depends(require_role("master"))):
+@limiter.limit("30/minute")
+def resolver_erro(request: Request, error_id: int, current_user: UserInDB = Depends(require_role("master"))):
     """(Master) Marca o erro do sistema como resolvido."""
     db = get_database()
     # Verifica

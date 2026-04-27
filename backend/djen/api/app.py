@@ -10,6 +10,7 @@ Execucao:
     python -m djen.api.app
 """
 
+import hashlib
 import json
 import logging
 import os
@@ -18,12 +19,12 @@ import time
 from contextlib import asynccontextmanager
 from typing import Optional
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Query
 from fastapi.middleware.cors import CORSMiddleware
 
 from djen.api.database import get_database, Database
 from djen.api.schemas import APIInfoResponse
-from pydantic import BaseModel # Defensiva para NameError
+
 import traceback
 from fastapi import Request
 from fastapi.responses import JSONResponse
@@ -35,7 +36,6 @@ from djen.api.ratelimit import limiter
 # =========================================================================
 # Globals
 # =========================================================================
-_start_time = time.time()
 _scheduler = None  # APScheduler (lazy init)
 
 # Logging
@@ -101,14 +101,14 @@ def _run_processos_datajud_cycle(limite: int = 50):
                     old_hashes = set()
                     for m in old_movs:
                         try:
-                            old_hashes.add(hash(json.dumps(m, sort_keys=True, ensure_ascii=False)))
+                            old_hashes.add(hashlib.sha256(json.dumps(m, sort_keys=True, ensure_ascii=False).encode()).hexdigest())
                         except (TypeError, ValueError):
                             pass
                     
                     novas_movs = []
                     for m in movs:
                         try:
-                            h = hash(json.dumps(m, sort_keys=True, ensure_ascii=False))
+                            h = hashlib.sha256(json.dumps(m, sort_keys=True, ensure_ascii=False).encode()).hexdigest()
                         except (TypeError, ValueError):
                             h = None
                         if h is not None and h not in old_hashes:
@@ -162,7 +162,7 @@ def _run_processos_datajud_cycle(limite: int = 50):
     except Exception as e:
         log.error("[Scheduler] Erro no ciclo de processos: %s", e)
         registrar_erro_sistema("scheduler._run_processos_datajud_cycle", type(e).__name__, str(e), traceback.format_exc())
-        return {"status": "error", "message": str(e)}
+        return {"status": "error", "message": "Erro interno do servidor"}
 
 
 def _run_captacao_scheduler():
@@ -314,7 +314,8 @@ app = FastAPI(
 )
 
 # CORS - Restrito em produção
-ALLOWED_ORIGINS = os.environ.get("ALLOWED_ORIGINS", "*").split(",")
+_origins_env = os.environ.get("ALLOWED_ORIGINS", "")
+ALLOWED_ORIGINS = [o.strip() for o in _origins_env.split(",") if o.strip()] if _origins_env else ["http://localhost:3000"]
 app.add_middleware(
     CORSMiddleware,
     allow_origins=ALLOWED_ORIGINS,
@@ -336,8 +337,8 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
         response = await call_next(request)
         response.headers["X-Content-Type-Options"] = "nosniff"
         response.headers["X-Frame-Options"] = "DENY"
-        response.headers["X-XSS-Protection"] = "1; mode=block"
         response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
+        response.headers["Content-Security-Policy"] = "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'"
         response.headers["Permissions-Policy"] = "camera=(), microphone=(), geolocation=()"
         return response
 
@@ -366,13 +367,14 @@ class MetricsMiddleware(BaseHTTPMiddleware):
                     auth_header = request.headers.get("Authorization", "")
                     if auth_header.startswith("Bearer "):
                         try:
-                            from jose import jwt
+                            import jwt
+                            from djen.api.auth import SECRET_KEY, ALGORITHM
                             token = auth_header.split(" ")[1]
                             payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
                             user_id = payload.get("sub")
                             tenant_id = payload.get("tenant_id")
-                        except Exception:
-                            pass
+                        except Exception as jwt_err:
+                            log.debug("[Audit] JWT decode falhou para %s: %s", request.url.path, jwt_err)
                     
                     registrar_auditoria(
                         action=f"{request.method}",
@@ -428,30 +430,7 @@ async def global_exception_handler(request: Request, exc: Exception):
         content={"detail": "Erro interno no servidor. O fato foi devidamente reportado para correcao."}
     )
 
-# Global Error Handler
-@app.exception_handler(Exception)
-async def global_exception_handler(request: Request, exc: Exception):
-    stack = traceback.format_exc()
-    error_msg = str(exc)
-    error_type = type(exc).__name__
-    
-    log.error(f"Global exception caught for {request.url.path}: {error_type} - {error_msg}")
-    
-    # Tentativa basica de pegar tenant e user. Normalmente via token, mas falhando as vezes eh apenas app start
-    # Sem middleware complexo, deixamos None para requests quebradas
-    registrar_erro_sistema(
-        function_name=f"{request.method} {request.url.path}",
-        error_type=error_type,
-        error_message=error_msg,
-        stack_trace=stack,
-        tenant_id=None,
-        user_id=None
-    )
-    
-    return JSONResponse(
-        status_code=500,
-        content={"detail": "Erro interno no servidor. O fato foi devidamente reportado para correcao."}
-    )
+
 
 # =========================================================================
 # Routers
@@ -587,20 +566,20 @@ app.include_router(final_batch_router)
 # Root
 # =========================================================================
 
-@app.get("/", response_model=APIInfoResponse, tags=["Info"])
+@app.get("/", tags=["Info"])
 def root():
-    """Informacoes da API Captacao Peticao Blindada."""
-    return APIInfoResponse(
-        fontes_disponiveis=["datajud", "djen_api", "tjsp_dje", "dejt", "querido_diario"],
-    )
+    """Health check da API."""
+    return {"status": "ok", "service": "captacao-blindada"}
 
 
 @app.post("/api/buscar/unificada", tags=["Busca Unificada"], summary="Busca em multiplas fontes")
+@limiter.limit("10/minute")
 def busca_unificada(
-    termo: str,
-    tribunal: Optional[str] = None,
-    data_inicio: Optional[str] = None,
-    data_fim: Optional[str] = None
+    request: Request,
+    termo: str = Query(..., min_length=3, max_length=200),
+    tribunal: Optional[str] = Query(None, max_length=20),
+    data_inicio: Optional[str] = Query(None, pattern=r"^\d{4}-\d{2}-\d{2}$"),
+    data_fim: Optional[str] = Query(None, pattern=r"^\d{4}-\d{2}-\d{2}$"),
 ):
     """
     Busca unificada em DataJud + DJEN simultaneamente.
@@ -638,7 +617,8 @@ def busca_unificada(
                     "resultados": [pub.to_dict() for pub in pubs[:20]],
                 }
             except Exception as e:
-                resultados[nome] = {"total": 0, "erro": str(e), "resultados": []}
+                log.error("[BuscaUnificada] Erro em %s: %s", nome, e)
+                resultados[nome] = {"total": 0, "erro": "Erro ao consultar fonte", "resultados": []}
 
     elapsed = int((time.time() - t0) * 1000)
     total = sum(r.get("total", 0) for r in resultados.values())

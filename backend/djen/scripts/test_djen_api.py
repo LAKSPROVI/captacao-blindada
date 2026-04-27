@@ -33,11 +33,10 @@ API_PATH = "/api/v1/comunicacao"
 API_URL = f"{API_BASE}{API_PATH}"
 
 # Proxy residencial BR (Bright Data) - necessario para IP brasileiro
-PROXY_URL = (
-    "http://brd-customer-hl_9fcf364a-zone-residential_proxy1-country-br"
-    ":a42i721ykgk9@brd.superproxy.io:33335"
-)
-PROXIES = {"http": PROXY_URL, "https": PROXY_URL}
+PROXY_URL = os.environ.get("BRIGHTDATA_PROXY_URL", "")
+if not PROXY_URL:
+    print("[AVISO] BRIGHTDATA_PROXY_URL nao definida. Testes podem falhar sem proxy BR.")
+PROXIES = {"http": PROXY_URL, "https": PROXY_URL} if PROXY_URL else {}
 
 HEADERS = {
     "Accept": "application/json",

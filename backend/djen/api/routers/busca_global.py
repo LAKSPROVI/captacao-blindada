@@ -5,9 +5,11 @@ Busca full-text em todo o sistema.
 import logging
 from typing import Optional
 
-from fastapi import APIRouter, Query
+from fastapi import Request, APIRouter, Depends, Query
 
 from djen.api.database import Database
+from djen.api.auth import get_current_user, UserInDB
+from djen.api.ratelimit import limiter
 
 log = logging.getLogger("captacao.busca_global")
 router = APIRouter(prefix="/api/busca-global", tags=["Busca Global"])
@@ -19,9 +21,10 @@ def get_db() -> Database:
 
 
 @router.get("", summary="Busca global no sistema")
-def busca_global(
-    q: str = Query(..., min_length=2, description="Termo de busca"),
+@limiter.limit("60/minute")
+def busca_global(request: Request, q: str = Query(..., min_length=2, description="Termo de busca"),
     limite: int = Query(50, ge=1, le=200),
+    current_user: UserInDB = Depends(get_current_user),
 ):
     """Busca full-text em publicações, processos, captações e anotações."""
     db = get_db()

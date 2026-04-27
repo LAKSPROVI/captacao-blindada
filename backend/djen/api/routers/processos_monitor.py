@@ -9,10 +9,12 @@ import json
 from typing import Optional, List
 from datetime import datetime
 
-from fastapi import APIRouter, HTTPException, Query, Body
+from fastapi import Request, APIRouter, Depends, HTTPException, Query, Body
 from pydantic import BaseModel
 
 from djen.api.database import Database
+from djen.api.auth import get_current_user, UserInDB
+from djen.api.ratelimit import limiter
 
 log = logging.getLogger("captacao.processos_monitor")
 router = APIRouter(prefix="/api/processos", tags=["Processos Monitorados"])
@@ -24,6 +26,11 @@ MAX_LIMIT = 500
 def get_db() -> Database:
     from djen.api.database import get_database
     return get_database()
+
+
+def _tid(user: UserInDB) -> "int | None":
+    """Retorna tenant_id para filtragem. Master ve tudo (None)."""
+    return None if user.role == "master" else user.tenant_id
 
 
 # =============================================================================
@@ -46,31 +53,35 @@ class AnotacaoRequest(BaseModel):
 # =============================================================================
 
 @router.get("/listar", summary="Listar processos monitorados")
-def listar_processos(
-    status: str = Query("ativo", description="Status: ativo, inativo, todos"),
+@limiter.limit("60/minute")
+def listar_processos(request: Request, status: str = Query("ativo", description="Status: ativo, inativo, todos"),
     limite: int = Query(DEFAULT_LIMIT, ge=1, le=MAX_LIMIT),
     offset: int = Query(0, ge=0),
+    current_user: UserInDB = Depends(get_current_user),
 ):
     """Lista todos os processos sendo monitorados automaticamente."""
     db = get_db()
+    tid = _tid(current_user)
     if status == "todos":
-        ativos = db.listar_processos_monitorados(status="ativo", limite=limite)
-        inativos = db.listar_processos_monitorados(status="inativo", limite=limite)
+        ativos = db.listar_processos_monitorados(status="ativo", limite=limite, tenant_id=tid)
+        inativos = db.listar_processos_monitorados(status="inativo", limite=limite, tenant_id=tid)
         processos = ativos + inativos
     else:
-        processos = db.listar_processos_monitorados(status=status, limite=limite)
+        processos = db.listar_processos_monitorados(status=status, limite=limite, tenant_id=tid)
     return {"status": "success", "total": len(processos), "limit": limite, "offset": offset, "processos": processos}
 
 
 @router.get("/stats", summary="Estatisticas de processos monitorados")
-def stats_processos():
+@limiter.limit("60/minute")
+def stats_processos(request: Request, current_user: UserInDB = Depends(get_current_user)):
     """Retorna estatisticas dos processos monitorados."""
     db = get_db()
-    return db.stats_processos_monitorados()
+    return db.stats_processos_monitorados(tenant_id=_tid(current_user))
 
 
 @router.post("/adicionar", summary="Adicionar processo manualmente")
-def adicionar_processo_manual(req: ProcessoManualRequest):
+@limiter.limit("30/minute")
+def adicionar_processo_manual(request: Request, req: ProcessoManualRequest, current_user: UserInDB = Depends(get_current_user)):
     """Adiciona processo por número CNJ para monitoramento."""
     from djen.api.validation import validate_cnj
     
@@ -83,6 +94,7 @@ def adicionar_processo_manual(req: ProcessoManualRequest):
         numero_processo=result.value or req.numero_processo,
         tribunal=req.tribunal,
         origem="manual",
+        tenant_id=current_user.tenant_id,
     )
     if pid is None:
         existing = db.obter_processo_monitorado(req.numero_processo)
@@ -95,9 +107,10 @@ def adicionar_processo_manual(req: ProcessoManualRequest):
 
 
 @router.post("/registrar", summary="Registrar processo para monitoramento")
-def registrar_processo(
-    numero_processo: str,
+@limiter.limit("30/minute")
+def registrar_processo(request: Request, numero_processo: str,
     tribunal: str = None,
+    current_user: UserInDB = Depends(get_current_user),
 ):
     """Registra manualmente um processo para monitoramento DataJud."""
     db = get_db()
@@ -105,6 +118,7 @@ def registrar_processo(
         numero_processo=numero_processo,
         tribunal=tribunal,
         origem="manual",
+        tenant_id=current_user.tenant_id,
     )
     if pid is None:
         existing = db.obter_processo_monitorado(numero_processo)
@@ -116,18 +130,21 @@ def registrar_processo(
 
 
 @router.post("/verificar-agora", summary="Verificar processos no DataJud agora")
-def verificar_agora(limite: int = Query(1000, ge=1, le=10000)):
+@limiter.limit("30/minute")
+def verificar_agora(request: Request, limite: int = Query(1000, ge=1, le=10000)):
     """Executa verificacao imediata dos processos pendentes via DataJud."""
     from djen.api.app import _run_processos_datajud_cycle
     try:
         result = _run_processos_datajud_cycle(limite=limite)
         return {"status": "success", **result}
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        log.error("Erro ao verificar processos DataJud: %s", e, exc_info=True)
+        raise HTTPException(status_code=500, detail="Erro interno do servidor")
 
 
 @router.get("/buscas/historico", summary="Histórico de buscas realizadas")
-def historico_buscas(limite: int = Query(50, ge=1, le=500)):
+@limiter.limit("60/minute")
+def historico_buscas(request: Request, limite: int = Query(50, ge=1, le=500)):
     """Lista histórico de buscas realizadas no sistema."""
     db = get_db()
     rows = db.conn.execute(
@@ -137,8 +154,8 @@ def historico_buscas(limite: int = Query(50, ge=1, le=500)):
 
 
 @router.get("/buscar-por-parte", summary="Buscar por nome de parte")
-def buscar_por_parte(
-    nome: str = Query(..., min_length=3, description="Nome da parte"),
+@limiter.limit("60/minute")
+def buscar_por_parte(request: Request, nome: str = Query(..., min_length=3, description="Nome da parte"),
     limite: int = Query(50, ge=1, le=500),
 ):
     """Busca publicações por nome de parte ou advogado."""
@@ -157,8 +174,8 @@ def buscar_por_parte(
 
 
 @router.post("/prazos/calcular", summary="Calcular prazo processual")
-def calcular_prazo(
-    data_inicio: str = Body(..., description="Data início (YYYY-MM-DD)"),
+@limiter.limit("30/minute")
+def calcular_prazo(request: Request, data_inicio: str = Body(..., description="Data início (YYYY-MM-DD)"),
     dias_uteis: int = Body(..., description="Quantidade de dias úteis"),
 ):
     """Calcula prazo processual em dias úteis (exclui fins de semana e feriados nacionais)."""
@@ -199,7 +216,8 @@ def calcular_prazo(
 # =============================================================================
 
 @router.get("/{numero_processo:path}/historico", summary="Historico de verificacoes")
-def obter_historico(numero_processo: str, limite: int = Query(50, ge=1, le=200)):
+@limiter.limit("60/minute")
+def obter_historico(request: Request, numero_processo: str, limite: int = Query(50, ge=1, le=200)):
     """Retorna o historico de verificacoes (DataJud e DJEN) de um processo."""
     db = get_db()
     historico = db.listar_historico_processo(numero_processo, limite=limite)
@@ -207,23 +225,10 @@ def obter_historico(numero_processo: str, limite: int = Query(50, ge=1, le=200))
 
 
 @router.get("/{numero_processo:path}/anotacoes", summary="Listar anotações do processo")
-def listar_anotacoes(numero_processo: str, limite: int = Query(100, ge=1, le=500)):
+@limiter.limit("60/minute")
+def listar_anotacoes(request: Request, numero_processo: str, limite: int = Query(100, ge=1, le=500)):
     """Lista anotações/comentários de um processo."""
     db = get_db()
-    try:
-        db.conn.execute("""
-            CREATE TABLE IF NOT EXISTS processo_anotacoes (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                numero_processo TEXT NOT NULL,
-                texto TEXT NOT NULL,
-                tipo TEXT DEFAULT 'nota',
-                criado_em TEXT DEFAULT (datetime('now', 'localtime'))
-            )
-        """)
-        db.conn.commit()
-    except Exception:
-        pass
-    
     rows = db.conn.execute(
         "SELECT * FROM processo_anotacoes WHERE numero_processo = ? ORDER BY id DESC LIMIT ?",
         (numero_processo, limite)
@@ -232,23 +237,10 @@ def listar_anotacoes(numero_processo: str, limite: int = Query(100, ge=1, le=500
 
 
 @router.post("/{numero_processo:path}/anotacoes", summary="Adicionar anotação ao processo")
-def adicionar_anotacao(numero_processo: str, req: AnotacaoRequest):
+@limiter.limit("30/minute")
+def adicionar_anotacao(request: Request, numero_processo: str, req: AnotacaoRequest):
     """Adiciona anotação/comentário a um processo."""
     db = get_db()
-    try:
-        db.conn.execute("""
-            CREATE TABLE IF NOT EXISTS processo_anotacoes (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                numero_processo TEXT NOT NULL,
-                texto TEXT NOT NULL,
-                tipo TEXT DEFAULT 'nota',
-                criado_em TEXT DEFAULT (datetime('now', 'localtime'))
-            )
-        """)
-        db.conn.commit()
-    except Exception:
-        pass
-    
     cur = db.conn.execute(
         "INSERT INTO processo_anotacoes (numero_processo, texto, tipo) VALUES (?, ?, ?)",
         (numero_processo, req.texto, req.tipo)
@@ -258,7 +250,8 @@ def adicionar_anotacao(numero_processo: str, req: AnotacaoRequest):
 
 
 @router.delete("/{numero_processo:path}/anotacoes/{anotacao_id}", summary="Remover anotação")
-def remover_anotacao(numero_processo: str, anotacao_id: int):
+@limiter.limit("30/minute")
+def remover_anotacao(request: Request, numero_processo: str, anotacao_id: int):
     """Remove uma anotação de um processo."""
     db = get_db()
     db.conn.execute("DELETE FROM processo_anotacoes WHERE id = ? AND numero_processo = ?", (anotacao_id, numero_processo))
@@ -267,7 +260,8 @@ def remover_anotacao(numero_processo: str, anotacao_id: int):
 
 
 @router.delete("/{numero_processo:path}", summary="Remover processo do monitoramento")
-def remover_processo(numero_processo: str):
+@limiter.limit("30/minute")
+def remover_processo(request: Request, numero_processo: str):
     """Remove (desativa) um processo do monitoramento automatico."""
     db = get_db()
     ok = db.deletar_processo_monitorado(numero_processo)
@@ -277,7 +271,8 @@ def remover_processo(numero_processo: str):
 
 
 @router.get("/{numero_processo:path}", summary="Detalhes de processo monitorado")
-def obter_processo(numero_processo: str):
+@limiter.limit("60/minute")
+def obter_processo(request: Request, numero_processo: str):
     """Retorna detalhes de um processo monitorado, incluindo movimentacoes."""
     db = get_db()
     proc = db.obter_processo_monitorado(numero_processo)

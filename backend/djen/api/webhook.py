@@ -84,11 +84,31 @@ class WebhookManager:
     ) -> bool:
         """Adiciona um webhook."""
         with self._lock:
-            # Validar URL
+            # Validar URL e bloquear SSRF
             try:
-                requests.URL(url)
+                from urllib.parse import urlparse
+                import ipaddress
+                import socket
+                parsed = urlparse(url)
+                if parsed.scheme not in ("http", "https"):
+                    log.error(f"URL com scheme invalido: {url}")
+                    return False
+                if not parsed.hostname:
+                    log.error(f"URL sem hostname: {url}")
+                    return False
+                # Bloquear IPs privados/internos (SSRF protection)
+                try:
+                    resolved = socket.getaddrinfo(parsed.hostname, None)
+                    for _, _, _, _, addr in resolved:
+                        ip = ipaddress.ip_address(addr[0])
+                        if ip.is_private or ip.is_loopback or ip.is_link_local or ip.is_reserved:
+                            log.error(f"URL aponta para IP privado/interno: {url} -> {addr[0]}")
+                            return False
+                except (socket.gaierror, ValueError):
+                    log.error(f"Nao foi possivel resolver hostname: {parsed.hostname}")
+                    return False
             except Exception:
-                log.error(f"URL inválida: {url}")
+                log.error(f"URL invalida: {url}")
                 return False
             
             self._webhooks[webhook_id] = WebhookConfig(
@@ -165,7 +185,7 @@ class WebhookManager:
                 if webhook.secret_token:
                     headers["Authorization"] = f"Bearer {webhook.secret_token}"
                 
-                response = self._session.post(
+                response = self._get_session().post(
                     webhook.url,
                     json=payload,
                     headers=headers,
@@ -194,13 +214,16 @@ class WebhookManager:
 # =============================================================================
 
 _webhook_manager: Optional[WebhookManager] = None
+_webhook_lock = threading.Lock()
 
 
 def get_webhook_manager() -> WebhookManager:
     """Retorna instância global do manager."""
     global _webhook_manager
     if _webhook_manager is None:
-        _webhook_manager = WebhookManager()
+        with _webhook_lock:
+            if _webhook_manager is None:
+                _webhook_manager = WebhookManager()
     return _webhook_manager
 
 
@@ -212,4 +235,4 @@ def trigger_webhook(
     return get_webhook_manager().trigger(event, data)
 
 
-log.info("Webhook Manager configurado")
+log.debug("Webhook Manager configurado")

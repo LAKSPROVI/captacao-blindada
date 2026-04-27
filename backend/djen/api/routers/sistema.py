@@ -7,10 +7,12 @@ import io
 import sqlite3
 from datetime import datetime
 
-from fastapi import APIRouter
+from fastapi import Request, APIRouter, Depends
 from fastapi.responses import StreamingResponse
 
 from djen.api.database import Database
+from djen.api.auth import get_current_user, require_role, UserInDB
+from djen.api.ratelimit import limiter
 
 log = logging.getLogger("captacao.versao")
 router = APIRouter(prefix="/api/sistema", tags=["Sistema"])
@@ -99,7 +101,8 @@ CHANGELOG = [
 
 
 @router.get("/versao", summary="Versão do sistema")
-def versao():
+@limiter.limit("60/minute")
+def versao(request: Request, current_user: UserInDB = Depends(get_current_user)):
     """Retorna versão atual e informações do sistema."""
     return {
         "version": VERSION,
@@ -113,13 +116,15 @@ def versao():
 
 
 @router.get("/changelog", summary="Changelog do sistema")
-def changelog():
+@limiter.limit("60/minute")
+def changelog(request: Request, current_user: UserInDB = Depends(get_current_user)):
     """Retorna histórico de mudanças."""
     return {"status": "success", "changelog": CHANGELOG}
 
 
 @router.get("/exportar-banco", summary="Exportar banco completo")
-def exportar_banco():
+@limiter.limit("5/minute")
+def exportar_banco(request: Request, current_user: UserInDB = Depends(require_role("master"))):
     """Exporta o banco de dados SQLite completo como download."""
     db = get_db()
     
@@ -142,7 +147,8 @@ def exportar_banco():
 
 
 @router.get("/tabelas", summary="Listar tabelas e contagens")
-def listar_tabelas():
+@limiter.limit("60/minute")
+def listar_tabelas(request: Request, current_user: UserInDB = Depends(require_role("master"))):
     """Lista todas as tabelas do banco com contagem de registros."""
     db = get_db()
     tables = db.conn.execute("SELECT name FROM sqlite_master WHERE type='table' ORDER BY name").fetchall()

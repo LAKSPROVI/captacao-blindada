@@ -10,14 +10,16 @@ import json
 from typing import Optional, List
 from datetime import datetime
 
-from fastapi import APIRouter, HTTPException, Query, Body
+from fastapi import APIRouter, HTTPException, Query, Body, Request
 from fastapi.responses import StreamingResponse
 
+from djen.api.ratelimit import limiter
 from djen.api.schemas import (
     MonitoradoCreateRequest, MonitoradoUpdateRequest,
     MonitoradoResponse, PublicacaoResponse, StatsResponse,
 )
 from djen.api.database import Database
+from djen.api.auth import get_current_user, UserInDB
 
 log = logging.getLogger("captacao.monitor")
 router = APIRouter(prefix="/api/monitor", tags=["Monitor"])
@@ -32,7 +34,8 @@ def get_db() -> Database:
 
 
 @router.post("/add", response_model=MonitoradoResponse, summary="Adicionar monitorado")
-def adicionar_monitorado(req: MonitoradoCreateRequest):
+@limiter.limit("30/minute")
+def adicionar_monitorado(request: Request, req: MonitoradoCreateRequest):
     """
     Adiciona um novo item para monitoramento automatico.
     Tipos: oab, processo, nome, parte, advogado.
@@ -59,7 +62,8 @@ def adicionar_monitorado(req: MonitoradoCreateRequest):
 
 
 @router.get("/list", response_model=List[MonitoradoResponse], summary="Listar monitorados")
-def listar_monitorados(ativos: bool = Query(True, description="Apenas ativos")):
+@limiter.limit("60/minute")
+def listar_monitorados(request: Request, ativos: bool = Query(True, description="Apenas ativos")):
     """Lista todos os itens monitorados."""
     db = get_db()
     monitorados = db.listar_monitorados(apenas_ativos=ativos)
@@ -67,7 +71,8 @@ def listar_monitorados(ativos: bool = Query(True, description="Apenas ativos")):
 
 
 @router.get("/monitorados", response_model=List[MonitoradoResponse], summary="Listar monitorados (alias)")
-def listar_monitorados_alias(ativos: bool = Query(True, description="Apenas ativos")):
+@limiter.limit("60/minute")
+def listar_monitorados_alias(request: Request, ativos: bool = Query(True, description="Apenas ativos")):
     """Alias para /list - Lista todos os itens monitorados."""
     db = get_db()
     monitorados = db.listar_monitorados(apenas_ativos=ativos)
@@ -75,7 +80,9 @@ def listar_monitorados_alias(ativos: bool = Query(True, description="Apenas ativ
 
 
 @router.get("/publicacoes/recentes", response_model=List[PublicacaoResponse], summary="Publicacoes recentes")
+@limiter.limit("60/minute")
 def publicacoes_recentes(
+    request: Request,
     fonte: Optional[str] = Query(None),
     tribunal: Optional[str] = Query(None),
     processo: Optional[str] = Query(None),
@@ -88,7 +95,8 @@ def publicacoes_recentes(
 
 
 @router.get("/stats", response_model=StatsResponse, summary="Estatisticas")
-def estatisticas():
+@limiter.limit("60/minute")
+def estatisticas(request: Request):
     """Retorna estatisticas gerais do sistema."""
     db = get_db()
     stats = db.obter_stats()
@@ -98,7 +106,9 @@ def estatisticas():
 
 
 @router.get('/publicacoes/buscar', response_model=List[PublicacaoResponse], summary='Busca textual no banco local')
+@limiter.limit("60/minute")
 def buscar_publicacoes_texto(
+    request: Request,
     termo: str = Query(..., min_length=1, description='Texto a buscar em todos os campos'),
     fonte: str = Query(None),
     tribunal: str = Query(None),
@@ -110,7 +120,8 @@ def buscar_publicacoes_texto(
     return [PublicacaoResponse(**p) for p in pubs]
 
 @router.get("/{monitorado_id}", response_model=MonitoradoResponse, summary="Obter monitorado")
-def obter_monitorado(monitorado_id: int):
+@limiter.limit("60/minute")
+def obter_monitorado(request: Request, monitorado_id: int):
     db = get_db()
     mon = db.obter_monitorado(monitorado_id)
     if not mon:
@@ -123,7 +134,8 @@ def obter_monitorado(monitorado_id: int):
 
 
 @router.put("/{monitorado_id}", response_model=MonitoradoResponse, summary="Atualizar monitorado")
-def atualizar_monitorado(monitorado_id: int, req: MonitoradoUpdateRequest):
+@limiter.limit("30/minute")
+def atualizar_monitorado(request: Request, monitorado_id: int, req: MonitoradoUpdateRequest):
     db = get_db()
     kwargs = {}
     if req.nome_amigavel is not None:
@@ -151,7 +163,8 @@ def atualizar_monitorado(monitorado_id: int, req: MonitoradoUpdateRequest):
 
 
 @router.delete("/{monitorado_id}", summary="Desativar monitorado")
-def desativar_monitorado(monitorado_id: int):
+@limiter.limit("30/minute")
+def desativar_monitorado(request: Request, monitorado_id: int):
     db = get_db()
     db.desativar_monitorado(monitorado_id)
     return {"status": "ok", "message": f"Monitorado {monitorado_id} desativado"}
@@ -162,7 +175,9 @@ def desativar_monitorado(monitorado_id: int):
 # =============================================================================
 
 @router.get("/publicacoes/export/csv", summary="Exportar publicações em CSV")
+@limiter.limit("5/minute")
 def exportar_publicacoes_csv(
+    request: Request,
     fonte: Optional[str] = Query(None),
     tribunal: Optional[str] = Query(None),
     limite: int = Query(MAX_LIMIT, ge=1, le=5000),
@@ -199,7 +214,9 @@ def exportar_publicacoes_csv(
 
 
 @router.get("/publicacoes/export/json", summary="Exportar publicações em JSON")
+@limiter.limit("5/minute")
 def exportar_publicacoes_json(
+    request: Request,
     fonte: Optional[str] = Query(None),
     tribunal: Optional[str] = Query(None),
     limite: int = Query(MAX_LIMIT, ge=1, le=5000),
@@ -221,28 +238,20 @@ def exportar_publicacoes_json(
 # =============================================================================
 
 @router.put("/publicacoes/{pub_id}/lida", summary="Marcar publicação como lida")
-def marcar_lida(pub_id: int, lida: bool = Body(True)):
+@limiter.limit("60/minute")
+def marcar_lida(request: Request, pub_id: int, lida: bool = Body(True)):
     """Marca/desmarca publicação como lida."""
     db = get_db()
-    try:
-        db.conn.execute("ALTER TABLE publicacoes ADD COLUMN lida INTEGER DEFAULT 0")
-        db.conn.commit()
-    except Exception:
-        pass
     db.conn.execute("UPDATE publicacoes SET lida = ? WHERE id = ?", (1 if lida else 0, pub_id))
     db.conn.commit()
     return {"status": "success", "id": pub_id, "lida": lida}
 
 
 @router.put("/publicacoes/{pub_id}/favorita", summary="Favoritar publicação")
-def marcar_favorita(pub_id: int, favorita: bool = Body(True)):
+@limiter.limit("60/minute")
+def marcar_favorita(request: Request, pub_id: int, favorita: bool = Body(True)):
     """Marca/desmarca publicação como favorita."""
     db = get_db()
-    try:
-        db.conn.execute("ALTER TABLE publicacoes ADD COLUMN favorita INTEGER DEFAULT 0")
-        db.conn.commit()
-    except Exception:
-        pass
     db.conn.execute("UPDATE publicacoes SET favorita = ? WHERE id = ?", (1 if favorita else 0, pub_id))
     db.conn.commit()
     return {"status": "success", "id": pub_id, "favorita": favorita}

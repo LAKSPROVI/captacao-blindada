@@ -8,6 +8,7 @@ Endpoint: POST https://api-publica.datajud.cnj.jus.br/api_publica_{tribunal}/_se
 
 import json
 import logging
+import os
 from datetime import datetime
 from typing import List, Dict, Optional
 
@@ -106,7 +107,7 @@ class DatajudSource(BaseSource):
     description = "DataJud API (CNJ) - Dados processuais de todos tribunais"
 
     BASE_URL = "https://api-publica.datajud.cnj.jus.br"
-    API_KEY = "cDZHYzlZa0JadVREZDJCendQbXY6SkJlTzNjLV9TRENyQk1RdnFKZGRQdw=="
+    API_KEY = os.environ.get("DATAJUD_API_KEY", "")
 
     def __init__(self, config: Optional[Dict] = None):
         super().__init__(config)

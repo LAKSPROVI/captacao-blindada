@@ -241,16 +241,7 @@ class ApiClient {
       headers: {
         "Content-Type": "application/json",
       },
-    });
-
-    this.client.interceptors.request.use((config) => {
-      if (typeof window !== "undefined") {
-        const token = localStorage.getItem("access_token");
-        if (token) {
-          config.headers.Authorization = `Bearer ${token}`;
-        }
-      }
-      return config;
+      withCredentials: true,
     });
 
     this.client.interceptors.response.use(
@@ -258,7 +249,6 @@ class ApiClient {
       (error: AxiosError) => {
         if (error.response?.status === 401) {
           if (typeof window !== "undefined") {
-            localStorage.removeItem("access_token");
             if (!window.location.pathname.includes("/login")) {
               window.location.href = "/login";
             }
@@ -277,9 +267,6 @@ class ApiClient {
     const { data } = await this.client.post<LoginResponse>("/auth/login", params, {
       headers: { "Content-Type": "application/x-www-form-urlencoded" },
     });
-    if (typeof window !== "undefined") {
-      localStorage.setItem("access_token", data.access_token);
-    }
     return data;
   }
 
@@ -288,9 +275,13 @@ class ApiClient {
     return data;
   }
 
-  logout() {
+  async logout() {
+    try {
+      await this.client.post("/auth/logout");
+    } catch {
+      // ignore errors on logout
+    }
     if (typeof window !== "undefined") {
-      localStorage.removeItem("access_token");
       window.location.href = "/login";
     }
   }
@@ -583,6 +574,42 @@ class ApiClient {
   async executarTodasCaptacoes(): Promise<CaptacaoExecResult[]> {
     const { data } = await this.client.post<CaptacaoExecResult[]>("/captacao/executar-todas");
     return data;
+  }
+
+  private async downloadBlob(data: BlobPart, mimeType: string, filename: string): Promise<void> {
+    const blob = new Blob([data], { type: mimeType });
+    // Detectar se o servidor retornou um erro JSON em vez do arquivo
+    if (blob.size < 1000 && (mimeType === "text/csv" || mimeType === "application/json")) {
+      try {
+        const text = await blob.text();
+        const parsed = JSON.parse(text);
+        if (parsed.detail || parsed.error) {
+          throw new Error(parsed.detail || parsed.error || "Erro ao exportar");
+        }
+      } catch (e) {
+        if (e instanceof SyntaxError) {
+          // Não é JSON, é o arquivo real - continuar download
+        } else {
+          throw e;
+        }
+      }
+    }
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = filename;
+    a.click();
+    URL.revokeObjectURL(url);
+  }
+
+  async exportarCaptacaoCsv(id: number): Promise<void> {
+    const { data } = await this.client.get(`/captacao/${id}/exportar/csv`, { responseType: "blob" });
+    await this.downloadBlob(data, "text/csv", `captacao_${id}.csv`);
+  }
+
+  async exportarCaptacaoJson(id: number): Promise<void> {
+    const { data } = await this.client.get(`/captacao/${id}/exportar/json`, { responseType: "blob" });
+    await this.downloadBlob(data, "application/json", `captacao_${id}.json`);
   }
 
   async previewCaptacao(params: CaptacaoPreviewParams): Promise<PublicacaoItem[]> {
@@ -1279,6 +1306,10 @@ export interface CaptacaoItem {
 export interface CaptacaoListResponse {
   status: string;
   total: number;
+  limit?: number;
+  offset?: number;
+  has_more?: boolean;
+  next_offset?: number;
   captacoes: CaptacaoItem[];
 }
 

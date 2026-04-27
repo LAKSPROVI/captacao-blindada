@@ -6,9 +6,11 @@ import logging
 from datetime import datetime, timedelta
 from typing import Optional
 
-from fastapi import APIRouter, Query
+from fastapi import Request, APIRouter, Depends, Query
 
 from djen.api.database import Database
+from djen.api.auth import get_current_user, UserInDB
+from djen.api.ratelimit import limiter
 
 log = logging.getLogger("captacao.dashboard")
 router = APIRouter(prefix="/api/dashboard", tags=["Dashboard"])
@@ -20,7 +22,8 @@ def get_db() -> Database:
 
 
 @router.get("/evolucao", summary="Evolução diária de publicações")
-def evolucao_diaria(dias: int = Query(30, ge=1, le=90)):
+@limiter.limit("60/minute")
+def evolucao_diaria(request: Request, dias: int = Query(30, ge=1, le=90)):
     """Retorna evolução diária de publicações encontradas."""
     db = get_db()
     rows = db.conn.execute("""
@@ -37,7 +40,8 @@ def evolucao_diaria(dias: int = Query(30, ge=1, le=90)):
 
 
 @router.get("/tribunais", summary="Distribuição por tribunal")
-def distribuicao_tribunais():
+@limiter.limit("60/minute")
+def distribuicao_tribunais(request: Request):
     """Retorna distribuição de publicações por tribunal."""
     db = get_db()
     rows = db.conn.execute("""
@@ -52,7 +56,8 @@ def distribuicao_tribunais():
 
 
 @router.get("/fontes", summary="Status de todas as fontes")
-def status_fontes():
+@limiter.limit("60/minute")
+def status_fontes(request: Request):
     """Retorna status de todas as fontes de dados."""
     db = get_db()
     
@@ -89,7 +94,8 @@ def status_fontes():
 
 
 @router.get("/proximas-execucoes", summary="Próximas execuções agendadas")
-def proximas_execucoes():
+@limiter.limit("60/minute")
+def proximas_execucoes(request: Request):
     """Retorna próximas execuções agendadas."""
     db = get_db()
     rows = db.conn.execute("""
@@ -103,7 +109,8 @@ def proximas_execucoes():
 
 
 @router.get("/atividade-recente", summary="Atividade recente do sistema")
-def atividade_recente(limite: int = Query(20, ge=1, le=100)):
+@limiter.limit("60/minute")
+def atividade_recente(request: Request, limite: int = Query(20, ge=1, le=100)):
     """Retorna atividade recente (execuções, erros, etc)."""
     db = get_db()
     
@@ -131,7 +138,8 @@ def atividade_recente(limite: int = Query(20, ge=1, le=100)):
 
 
 @router.get("/resumo-completo", summary="Resumo completo do sistema")
-def resumo_completo():
+@limiter.limit("60/minute")
+def resumo_completo(request: Request):
     """Retorna resumo completo para o dashboard."""
     db = get_db()
     
@@ -161,7 +169,8 @@ def resumo_completo():
 
 
 @router.get("/comparacao-tribunais", summary="Comparação entre tribunais")
-def comparacao_tribunais():
+@limiter.limit("60/minute")
+def comparacao_tribunais(request: Request):
     """Compara volume de publicações entre tribunais com dados semanal e mensal."""
     db = get_db()
     rows = db.conn.execute("""
@@ -178,7 +187,8 @@ def comparacao_tribunais():
 
 
 @router.get("/top-processos", summary="Processos mais ativos")
-def top_processos(limite: int = Query(20, ge=1, le=100)):
+@limiter.limit("60/minute")
+def top_processos(request: Request, limite: int = Query(20, ge=1, le=100)):
     """Lista processos com mais publicações."""
     db = get_db()
     rows = db.conn.execute("""

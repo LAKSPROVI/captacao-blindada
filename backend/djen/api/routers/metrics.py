@@ -5,9 +5,11 @@ Endpoints para monitoramento e métricas.
 """
 import logging
 
-from fastapi import APIRouter, Response
+from fastapi import Request, APIRouter, Depends, Response
 
 from djen.api.metrics import get_metrics, format_prometheus
+from djen.api.auth import get_current_user, require_role, UserInDB
+from djen.api.ratelimit import limiter
 
 log = logging.getLogger("captacao.metrics")
 router = APIRouter(prefix="/api/metrics", tags=["Metrics"])
@@ -18,7 +20,8 @@ router = APIRouter(prefix="/api/metrics", tags=["Metrics"])
 # =============================================================================
 
 @router.get("", summary="Métricas em JSON")
-def get_metrics_json():
+@limiter.limit("60/minute")
+def get_metrics_json(request: Request):
     """
     Retorna métricas em formato JSON.
     
@@ -35,7 +38,8 @@ def get_metrics_json():
 
 
 @router.get("/prometheus", summary="Métricas em formato Prometheus")
-def get_metrics_prometheus():
+@limiter.limit("60/minute")
+def get_metrics_prometheus(request: Request):
     """
     Retorna métricas em formato Prometheus.
     
@@ -51,7 +55,8 @@ def get_metrics_prometheus():
 
 
 @router.get("/health", summary="Health check com métricas")
-def get_health_with_metrics():
+@limiter.limit("60/minute")
+def get_health_with_metrics(request: Request):
     """
     Health check com métricas resumidas.
     """
@@ -87,7 +92,8 @@ def get_health_with_metrics():
 
 
 @router.post("/reset", summary="Resetar métricas")
-def reset_metrics():
+@limiter.limit("5/minute")
+def reset_metrics(request: Request):
     """Reseta todas as métricas (use com cautela)."""
     global _metrics
     _metrics = None

@@ -89,7 +89,7 @@ class JusBrasilSource(BaseSource):
         super().__init__(config)
         self.api_key = self.config.get(
             "brightdata_api_key",
-            os.environ.get("BRIGHTDATA_API_KEY", "0f906555-d01a-49d7-ae59-4a837ea7b23a"),
+            os.environ.get("BRIGHTDATA_API_KEY", ""),
         )
         self.email = self.config.get("email", "")
         self.senha = self.config.get("senha", "")

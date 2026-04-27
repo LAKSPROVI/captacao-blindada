@@ -1,8 +1,9 @@
 import logging
 from typing import List, Optional
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, status, Request
 from pydantic import BaseModel
 
+from djen.api.ratelimit import limiter
 from djen.api.auth import get_current_user, require_role, require_master_or_tenant_admin, UserInDB, hash_password
 from djen.api.schemas import (
     TenantResponse, TenantCreateRequest, TenantUpdateRequest,
@@ -19,13 +20,15 @@ router = APIRouter(prefix="/api/admin", tags=["Administracao"])
 # =========================================================================
 
 @router.get("/tenants", response_model=List[TenantResponse])
-def listar_tenants(current_user: UserInDB = Depends(require_role("master"))):
+@limiter.limit("60/minute")
+def listar_tenants(request: Request, current_user: UserInDB = Depends(require_role("master"))):
     db = get_database()
     rows = db.conn.execute("SELECT * FROM tenants").fetchall()
     return [TenantResponse(**dict(r)) for r in rows]
 
 @router.post("/tenants", response_model=TenantResponse)
-def criar_tenant(tenant: TenantCreateRequest, current_user: UserInDB = Depends(require_role("master"))):
+@limiter.limit("30/minute")
+def criar_tenant(request: Request, tenant: TenantCreateRequest, current_user: UserInDB = Depends(require_role("master"))):
     db = get_database()
     cur = db.conn.execute(
         "INSERT INTO tenants (nome, ativo, saldo_tokens) VALUES (?, ?, ?)",
@@ -36,7 +39,8 @@ def criar_tenant(tenant: TenantCreateRequest, current_user: UserInDB = Depends(r
     return TenantResponse(**dict(row))
 
 @router.put("/tenants/{tenant_id}", response_model=TenantResponse)
-def atualizar_tenant(tenant_id: int, tenant: TenantUpdateRequest, current_user: UserInDB = Depends(require_role("master"))):
+@limiter.limit("30/minute")
+def atualizar_tenant(request: Request, tenant_id: int, tenant: TenantUpdateRequest, current_user: UserInDB = Depends(require_role("master"))):
     db = get_database()
     sets = []
     vals = []
@@ -69,7 +73,8 @@ def atualizar_tenant(tenant_id: int, tenant: TenantUpdateRequest, current_user: 
 # =========================================================================
 
 @router.get("/users", response_model=List[UserResponse])
-def listar_usuarios(current_user: UserInDB = Depends(require_master_or_tenant_admin())):
+@limiter.limit("60/minute")
+def listar_usuarios(request: Request, current_user: UserInDB = Depends(require_master_or_tenant_admin())):
     db = get_database()
     if current_user.role == "master":
         rows = db.conn.execute("SELECT * FROM users").fetchall()
@@ -78,7 +83,8 @@ def listar_usuarios(current_user: UserInDB = Depends(require_master_or_tenant_ad
     return [UserResponse(**dict(r)) for r in rows]
 
 @router.put("/users/{user_id}", response_model=UserResponse)
-def atualizar_usuario(user_id: int, user: UserUpdateRequest, current_user: UserInDB = Depends(require_master_or_tenant_admin())):
+@limiter.limit("30/minute")
+def atualizar_usuario(request: Request, user_id: int, user: UserUpdateRequest, current_user: UserInDB = Depends(require_master_or_tenant_admin())):
     db = get_database()
     
     # Check permissions
@@ -119,7 +125,8 @@ def atualizar_usuario(user_id: int, user: UserUpdateRequest, current_user: UserI
     return UserResponse(**dict(row))
 
 @router.delete("/users/{user_id}", status_code=status.HTTP_204_NO_CONTENT)
-def deletar_usuario(user_id: int, current_user: UserInDB = Depends(require_master_or_tenant_admin())):
+@limiter.limit("10/minute")
+def deletar_usuario(request: Request, user_id: int, current_user: UserInDB = Depends(require_master_or_tenant_admin())):
     db = get_database()
     target_user = db.conn.execute("SELECT * FROM users WHERE id = ?", (user_id,)).fetchone()
     if not target_user:
@@ -137,21 +144,18 @@ def deletar_usuario(user_id: int, current_user: UserInDB = Depends(require_maste
 # =========================================================================
 
 @router.put("/users/{user_id}/bloquear")
-def bloquear_usuario(user_id: int, current_user: UserInDB = Depends(require_master_or_tenant_admin())):
+@limiter.limit("30/minute")
+def bloquear_usuario(request: Request, user_id: int, current_user: UserInDB = Depends(require_master_or_tenant_admin())):
     """Bloqueia um usuário sem deletar."""
     db = get_database()
-    try:
-        db.conn.execute("ALTER TABLE users ADD COLUMN bloqueado INTEGER DEFAULT 0")
-        db.conn.commit()
-    except Exception:
-        pass
     db.conn.execute("UPDATE users SET bloqueado = 1 WHERE id = ?", (user_id,))
     db.conn.commit()
     return {"status": "success", "message": f"Usuário {user_id} bloqueado"}
 
 
 @router.put("/users/{user_id}/desbloquear")
-def desbloquear_usuario(user_id: int, current_user: UserInDB = Depends(require_master_or_tenant_admin())):
+@limiter.limit("30/minute")
+def desbloquear_usuario(request: Request, user_id: int, current_user: UserInDB = Depends(require_master_or_tenant_admin())):
     """Desbloqueia um usuário."""
     db = get_database()
     db.conn.execute("UPDATE users SET bloqueado = 0 WHERE id = ?", (user_id,))
@@ -164,7 +168,8 @@ def desbloquear_usuario(user_id: int, current_user: UserInDB = Depends(require_m
 # =========================================================================
 
 @router.get("/users/{user_id}/atividade")
-def atividade_usuario(user_id: int, current_user: UserInDB = Depends(require_master_or_tenant_admin())):
+@limiter.limit("60/minute")
+def atividade_usuario(request: Request, user_id: int, current_user: UserInDB = Depends(require_master_or_tenant_admin())):
     """Retorna atividade recente de um usuário."""
     db = get_database()
     user = db.conn.execute("SELECT id, username, full_name, role, criado_em FROM users WHERE id = ?", (user_id,)).fetchone()
@@ -199,7 +204,8 @@ def atividade_usuario(user_id: int, current_user: UserInDB = Depends(require_mas
 # =========================================================================
 
 @router.get("/tenants/{tenant_id}/stats")
-def stats_tenant(tenant_id: int, current_user: UserInDB = Depends(require_role("master"))):
+@limiter.limit("60/minute")
+def stats_tenant(request: Request, tenant_id: int, current_user: UserInDB = Depends(require_role("master"))):
     """Estatísticas de uso por tenant."""
     db = get_database()
     
@@ -230,21 +236,18 @@ def stats_tenant(tenant_id: int, current_user: UserInDB = Depends(require_role("
 
 
 @router.put("/tenants/{tenant_id}/suspender")
-def suspender_tenant(tenant_id: int, current_user: UserInDB = Depends(require_role("master"))):
+@limiter.limit("10/minute")
+def suspender_tenant(request: Request, tenant_id: int, current_user: UserInDB = Depends(require_role("master"))):
     """Suspende um tenant."""
     db = get_database()
-    try:
-        db.conn.execute("ALTER TABLE tenants ADD COLUMN suspenso INTEGER DEFAULT 0")
-        db.conn.commit()
-    except Exception:
-        pass
     db.conn.execute("UPDATE tenants SET suspenso = 1 WHERE id = ?", (tenant_id,))
     db.conn.commit()
     return {"status": "success", "message": f"Tenant {tenant_id} suspenso"}
 
 
 @router.put("/tenants/{tenant_id}/reativar")
-def reativar_tenant(tenant_id: int, current_user: UserInDB = Depends(require_role("master"))):
+@limiter.limit("10/minute")
+def reativar_tenant(request: Request, tenant_id: int, current_user: UserInDB = Depends(require_role("master"))):
     """Reativa um tenant suspenso."""
     db = get_database()
     db.conn.execute("UPDATE tenants SET suspenso = 0 WHERE id = ?", (tenant_id,))

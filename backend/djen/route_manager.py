@@ -77,18 +77,18 @@ DEFAULT_ROUTES = {
 # Configuracao Bright Data
 BRIGHTDATA_CONFIG = {
     "residential_proxy": {
-        "server": "brd.superproxy.io:33335",
-        "username": "brd-customer-hl_9fcf364a-zone-residential_proxy1-country-br",
-        "password": "a42i721ykgk9",
+        "server": os.environ.get("BRIGHTDATA_RESIDENTIAL_SERVER", ""),
+        "username": os.environ.get("BRIGHTDATA_RESIDENTIAL_USERNAME", ""),
+        "password": os.environ.get("BRIGHTDATA_RESIDENTIAL_PASSWORD", ""),
     },
     "web_unlocker": {
-        "api_url": "https://api.brightdata.com/request",
-        "zone": "web_unlocker1",
+        "api_url": os.environ.get("BRIGHTDATA_WEB_UNLOCKER_URL", "https://api.brightdata.com/request"),
+        "zone": os.environ.get("BRIGHTDATA_WEB_UNLOCKER_ZONE", ""),
         "api_key_env": "BRIGHTDATA_API_KEY",
-        "api_key_default": "0f906555-d01a-49d7-ae59-4a837ea7b23a",
+        "api_key_default": "",
     },
     "scraping_browser": {
-        "ws_endpoint": "wss://brd-customer-hl_9fcf364a-zone-scraping_browser1:gfoho6c9oide@brd.superproxy.io:9222",
+        "ws_endpoint": os.environ.get("BRIGHTDATA_SCRAPING_BROWSER_WS", ""),
     },
 }
 

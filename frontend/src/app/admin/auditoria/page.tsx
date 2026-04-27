@@ -66,13 +66,40 @@ export default function AuditoriaPage() {
     }
   };
 
-  const handleExportCSV = () => {
-    const token = localStorage.getItem("token");
-    window.open(`${process.env.NEXT_PUBLIC_API_URL || "https://captacao.jurislaw.com.br"}/api/audit/export/csv?limit=10000`, "_blank");
+  const handleExportCSV = async () => {
+    try {
+      const response = await fetch("/api/audit/export/csv?limit=10000", {
+        credentials: "include",
+      });
+      if (!response.ok) throw new Error("Erro ao exportar CSV");
+      const blob = await response.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = "auditoria.csv";
+      a.click();
+      URL.revokeObjectURL(url);
+    } catch (e: any) {
+      console.error("Erro ao exportar CSV:", e);
+    }
   };
 
-  const handleExportJSON = () => {
-    window.open(`${process.env.NEXT_PUBLIC_API_URL || "https://captacao.jurislaw.com.br"}/api/audit/export/json?limit=10000`, "_blank");
+  const handleExportJSON = async () => {
+    try {
+      const response = await fetch("/api/audit/export/json?limit=10000", {
+        credentials: "include",
+      });
+      if (!response.ok) throw new Error("Erro ao exportar JSON");
+      const blob = await response.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = "auditoria.json";
+      a.click();
+      URL.revokeObjectURL(url);
+    } catch (e: any) {
+      console.error("Erro ao exportar JSON:", e);
+    }
   };
 
   const filteredLogs = logs.filter((l) => {

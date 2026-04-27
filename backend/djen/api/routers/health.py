@@ -7,9 +7,10 @@ import logging
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
-from fastapi import APIRouter
+from fastapi import Request, APIRouter
 
 from djen.api.schemas import HealthResponse, HealthSourceResponse
+from djen.api.ratelimit import limiter
 
 log = logging.getLogger("captacao.health")
 router = APIRouter(tags=["Health"])
@@ -30,13 +31,15 @@ def _check_source(source_cls, name: str) -> HealthSourceResponse:
             proxy_used=result.get("proxy_used"),
         )
     except Exception as e:
+        log.error("Erro health check fonte %s: %s", name, e, exc_info=True)
         return HealthSourceResponse(
-            source=name, status="error", message=str(e)
+            source=name, status="error", message="Erro ao verificar fonte"
         )
 
 
 @router.get("/api/health", response_model=HealthResponse, summary="Health check completo")
-def health_check_completo():
+@limiter.limit("60/minute")
+def health_check_completo(request: Request):
     """
     Verifica o status de todas as fontes em paralelo.
     Retorna status individual de cada fonte + banco + scheduler.
@@ -62,8 +65,9 @@ def health_check_completo():
                 fontes_results.append(future.result())
             except Exception as e:
                 name = futures[future]
+                log.error("Erro health check fonte %s: %s", name, e, exc_info=True)
                 fontes_results.append(HealthSourceResponse(
-                    source=name, status="error", message=str(e)
+                    source=name, status="error", message="Erro ao verificar fonte"
                 ))
 
     # Status geral
@@ -108,7 +112,8 @@ def health_check_completo():
 
 
 @router.get("/api/health/circuits", summary="Status dos Circuit Breakers")
-def health_circuits():
+@limiter.limit("60/minute")
+def health_circuits(request: Request):
     """
     Retorna o status de todos os Circuit Breakers.
     """
@@ -128,7 +133,8 @@ def health_circuits():
 
 
 @router.post("/api/health/circuits/reset", summary="Resetar todos os Circuit Breakers")
-def reset_circuits():
+@limiter.limit("5/minute")
+def reset_circuits(request: Request):
     """Reseta todos os Circuit Breakers (use com cautela)."""
     from djen.api.circuitbreaker import reset_all_circuits
     
@@ -137,7 +143,8 @@ def reset_circuits():
 
 
 @router.get("/api/health/database", summary="Saúde detalhada do banco")
-def health_database():
+@limiter.limit("60/minute")
+def health_database(request: Request):
     """Retorna informações detalhadas do banco de dados."""
     from djen.api.database import get_database
     db = get_database()
@@ -155,7 +162,6 @@ def health_database():
         
         return {
             "status": "ok",
-            "database": db.db_path,
             "size_bytes": db_size,
             "size_mb": round(db_size / 1024 / 1024, 2),
             "journal_mode": wal_mode,
@@ -163,11 +169,13 @@ def health_database():
             "total_tables": len(table_stats),
         }
     except Exception as e:
-        return {"status": "error", "message": str(e)}
+        log.error("Erro health database: %s", e, exc_info=True)
+        return {"status": "error", "message": "Erro ao acessar banco de dados"}
 
 
 @router.get("/api/health/system", summary="Informações do sistema")
-def health_system():
+@limiter.limit("60/minute")
+def health_system(request: Request):
     """Retorna informações do sistema operacional e runtime."""
     import platform
     import sys

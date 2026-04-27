@@ -4,11 +4,15 @@ Router de Configurações Avançadas - CAPTAÇÃO BLINDADA.
 Endpoints para API Keys, 2FA, SSO, Cache, Backup, etc.
 """
 import logging
+import os
+import re as _re
 from typing import Optional
 
-from fastapi import APIRouter, HTTPException, Depends, Body
+from fastapi import APIRouter, HTTPException, Depends, Body, Request
 from pydantic import BaseModel, Field
 
+from djen.api.ratelimit import limiter
+from djen.api.auth import get_current_user, require_role, UserInDB
 from djen.api.security import (
     get_api_key_manager,
     get_2fa,
@@ -35,7 +39,9 @@ class CreateAPIKeyRequest(BaseModel):
 
 
 @router.get("/keys", summary="Listar API Keys")
+@limiter.limit("60/minute")
 def listar_keys(
+    request: Request,
     tenant_id: Optional[int] = None,
 ):
     """Lista todas as API keys."""
@@ -45,13 +51,14 @@ def listar_keys(
 
 
 @router.post("/keys", summary="Criar API Key")
-def criar_key(request: CreateAPIKeyRequest):
+@limiter.limit("10/minute")
+def criar_key(request: Request, body: CreateAPIKeyRequest = Body(...)):
     """Cria nova API key."""
     manager = get_api_key_manager()
     key = manager.create_key(
-        nome=request.nome,
-        tenant_id=request.tenant_id,
-        expires_days=request.expires_days,
+        nome=body.nome,
+        tenant_id=body.tenant_id,
+        expires_days=body.expires_days,
     )
     return {
         "status": "success",
@@ -65,7 +72,8 @@ def criar_key(request: CreateAPIKeyRequest):
 
 
 @router.delete("/keys/{key_id}", summary="Revogar API Key")
-def revogar_key(key_id: str):
+@limiter.limit("10/minute")
+def revogar_key(request: Request, key_id: str):
     """Revoga uma API key."""
     manager = get_api_key_manager()
     success = manager.revoke_key(key_id)
@@ -87,10 +95,12 @@ class Verify2FARequest(BaseModel):
     """Request para verificar 2FA."""
     user_id: int
     code: str
+    secret: str = Field(..., description="Segredo 2FA do usuario (gerado no setup)")
 
 
 @router.post("/2fa/generate", summary="Gerar 2FA")
-def gerar_2fa(request: Enable2FARequest):
+@limiter.limit("10/minute")
+def gerar_2fa(request: Request, body: Enable2FARequest = Body(...)):
     """
     Gera segredo 2FA para usuário.
     
@@ -98,7 +108,7 @@ def gerar_2fa(request: Enable2FARequest):
     """
     tfa = get_2fa()
     secret = tfa.generate_secret()
-    url = tfa.get_qr_url(secret, f"user_{request.user_id}")
+    url = tfa.get_qr_url(secret, f"user_{body.user_id}")
     
     return {
         "status": "success",
@@ -108,11 +118,11 @@ def gerar_2fa(request: Enable2FARequest):
 
 
 @router.post("/2fa/verify", summary="Verificar código 2FA")
-def verificar_2fa(request: Verify2FARequest):
+@limiter.limit("10/minute")
+def verificar_2fa(request: Request, body: Verify2FARequest = Body(...)):
     """Verifica código 2FA."""
     tfa = get_2fa()
-    # Em produção, buscar secret do usuário
-    valid = tfa.verify_code("test_secret", request.code)
+    valid = tfa.verify_code(body.secret, body.code)
     
     return {
         "status": "success",
@@ -133,7 +143,8 @@ class ConfigureSSORequest(BaseModel):
 
 
 @router.get("/sso", summary="Verificar SSO")
-def ver_sso():
+@limiter.limit("60/minute")
+def ver_sso(request: Request):
     """Verifica configuração SSO."""
     sso = get_sso_config()
     return {
@@ -147,16 +158,17 @@ def ver_sso():
 
 
 @router.post("/sso", summary="Configurar SSO")
-def configurar_sso(request: ConfigureSSORequest):
+@limiter.limit("10/minute")
+def configurar_sso(request: Request, body: ConfigureSSORequest = Body(...)):
     """Configura provider SSO."""
     sso = get_sso_config()
     sso.configure(
-        provider=request.provider,
-        enabled=request.enabled,
-        client_id=request.client_id,
-        client_secret=request.client_secret,
+        provider=body.provider,
+        enabled=body.enabled,
+        client_id=body.client_id,
+        client_secret=body.client_secret,
     )
-    return {"status": "success", "message": f"SSO {request.provider} configurado"}
+    return {"status": "success", "message": f"SSO {body.provider} configurado"}
 
 
 # =============================================================================
@@ -164,14 +176,16 @@ def configurar_sso(request: ConfigureSSORequest):
 # =============================================================================
 
 @router.get("/cache/stats", summary="Estatísticas do cache")
-def cache_stats():
+@limiter.limit("60/minute")
+def cache_stats(request: Request):
     """Retorna estatísticas do cache."""
     cache = get_cache()
     return {"status": "success", "stats": cache.stats()}
 
 
 @router.post("/cache/clear", summary="Limpar cache")
-def limpar_cache():
+@limiter.limit("10/minute")
+def limpar_cache(request: Request):
     """Limpa todo cache."""
     cache = get_cache()
     cache.clear()
@@ -179,7 +193,9 @@ def limpar_cache():
 
 
 @router.post("/cache/redis", summary="Configurar Redis")
+@limiter.limit("5/minute")
 def configurar_redis(
+    request: Request,
     host: str = Body("localhost"),
     port: int = Body(6379),
     password: Optional[str] = Body(None),
@@ -199,7 +215,8 @@ def configurar_redis(
 # =============================================================================
 
 @router.get("/backup", summary="Listar backups")
-def listar_backups():
+@limiter.limit("60/minute")
+def listar_backups(request: Request):
     """Lista backups disponíveis."""
     manager = get_backup_manager()
     backups = manager.list_backups()
@@ -207,10 +224,10 @@ def listar_backups():
 
 
 @router.post("/backup", summary="Criar backup")
-def criar_backup(
-    db_path: str = Body("/app/data/captacao_blindada.db"),
-):
+@limiter.limit("5/minute")
+def criar_backup(request: Request):
     """Cria backup agora."""
+    db_path = os.environ.get("CAPTACAO_DB_PATH", "/app/data/captacao_blindada.db")
     manager = get_backup_manager()
     path = manager.create_backup(db_path)
     if not path:
@@ -219,11 +236,13 @@ def criar_backup(
 
 
 @router.post("/backup/{backup_name}/restore", summary="Restaurar backup")
-def restaurar_backup(
-    backup_name: str,
-    db_path: str = Body("/app/data/captacao_blindada.db"),
-):
+@limiter.limit("5/minute")
+def restaurar_backup(request: Request, backup_name: str):
     """Restaura backup."""
+    # Validar nome do backup contra path traversal
+    if not _re.match(r"^[\w\-\.]+$", backup_name):
+        raise HTTPException(status_code=400, detail="Nome de backup invalido")
+    db_path = os.environ.get("CAPTACAO_DB_PATH", "/app/data/captacao_blindada.db")
     manager = get_backup_manager()
     backup_path = f"{manager._backups_dir}/{backup_name}"
     success = manager.restore(backup_path, db_path)
@@ -233,11 +252,10 @@ def restaurar_backup(
 
 
 @router.post("/backup/auto/start", summary="Iniciar backup automático")
-def iniciar_backup_auto(
-    interval_hours: int = Body(24),
-    db_path: str = Body("/app/data/captacao_blindada.db"),
-):
+@limiter.limit("5/minute")
+def iniciar_backup_auto(request: Request, interval_hours: int = Body(24)):
     """Inicia backup automático."""
+    db_path = os.environ.get("CAPTACAO_DB_PATH", "/app/data/captacao_blindada.db")
     manager = get_backup_manager()
     manager.configure()
     manager.auto_backup(db_path, interval_hours)
@@ -245,7 +263,8 @@ def iniciar_backup_auto(
 
 
 @router.post("/backup/auto/stop", summary="Parar backup automático")
-def parar_backup_auto():
+@limiter.limit("5/minute")
+def parar_backup_auto(request: Request):
     """Para backup automático."""
     manager = get_backup_manager()
     manager.stop()
@@ -257,7 +276,8 @@ def parar_backup_auto():
 # =============================================================================
 
 @router.get("/settings", summary="Listar configurações globais")
-def listar_settings():
+@limiter.limit("60/minute")
+def listar_settings(request: Request):
     """Lista todas as configurações globais do sistema."""
     from djen.api.database import get_database
     db = get_database()
@@ -269,17 +289,18 @@ def listar_settings():
 
 
 @router.put("/settings/{key}", summary="Atualizar configuração")
-def atualizar_setting(key: str, value: str = Body(...)):
+@limiter.limit("30/minute")
+def atualizar_setting(request: Request, key: str, value: str = Body(...)):
     """Atualiza uma configuração global."""
     from djen.api.database import get_database
     db = get_database()
     try:
-        db.conn.execute("CREATE TABLE IF NOT EXISTS system_settings (key TEXT PRIMARY KEY, value TEXT, updated_at TEXT DEFAULT (datetime('now','localtime')))")
         db.conn.execute("INSERT OR REPLACE INTO system_settings (key, value, updated_at) VALUES (?, ?, datetime('now','localtime'))", (key, value))
         db.conn.commit()
         return {"status": "success", "key": key, "value": value}
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        log.error("Erro ao atualizar setting %s: %s", key, e, exc_info=True)
+        raise HTTPException(status_code=500, detail="Erro ao acessar banco de dados")
 
 
 # =============================================================================
@@ -287,7 +308,8 @@ def atualizar_setting(key: str, value: str = Body(...)):
 # =============================================================================
 
 @router.post("/purge/execucoes", summary="Limpar execuções antigas")
-def purge_execucoes(dias: int = Body(90, description="Manter últimos X dias")):
+@limiter.limit("5/minute")
+def purge_execucoes(request: Request, dias: int = Body(90, description="Manter últimos X dias")):
     """Remove execuções mais antigas que X dias."""
     from djen.api.database import get_database
     db = get_database()
@@ -300,7 +322,8 @@ def purge_execucoes(dias: int = Body(90, description="Manter últimos X dias")):
 
 
 @router.post("/purge/erros", summary="Limpar erros resolvidos antigos")
-def purge_erros(dias: int = Body(30, description="Manter últimos X dias")):
+@limiter.limit("5/minute")
+def purge_erros(request: Request, dias: int = Body(30, description="Manter últimos X dias")):
     """Remove erros resolvidos mais antigos que X dias."""
     from djen.api.database import get_database
     db = get_database()
@@ -313,7 +336,8 @@ def purge_erros(dias: int = Body(30, description="Manter últimos X dias")):
 
 
 @router.post("/purge/audit", summary="Limpar logs de auditoria antigos")
-def purge_audit(dias: int = Body(180, description="Manter últimos X dias")):
+@limiter.limit("5/minute")
+def purge_audit(request: Request, dias: int = Body(180, description="Manter últimos X dias")):
     """Remove logs de auditoria mais antigos que X dias."""
     from djen.api.database import get_database
     db = get_database()
@@ -330,7 +354,8 @@ def purge_audit(dias: int = Body(180, description="Manter últimos X dias")):
 # =============================================================================
 
 @router.get("/captacoes/exportar", summary="Exportar todas as captações em JSON")
-def exportar_captacoes():
+@limiter.limit("5/minute")
+def exportar_captacoes(request: Request):
     """Exporta todas as captações configuradas em JSON."""
     import json as _json
     from fastapi.responses import StreamingResponse
@@ -346,7 +371,8 @@ def exportar_captacoes():
 
 
 @router.post("/captacoes/importar", summary="Importar captações de JSON")
-def importar_captacoes(captacoes: list = Body(...)):
+@limiter.limit("5/minute")
+def importar_captacoes(request: Request, captacoes: list = Body(...)):
     """Importa captações a partir de lista JSON."""
     from djen.api.database import get_database
     db = get_database()
@@ -370,7 +396,8 @@ def importar_captacoes(captacoes: list = Body(...)):
 # =============================================================================
 
 @router.get("/billing/alerta-saldo", summary="Verificar saldo baixo")
-def alerta_saldo(threshold: int = Body(1000)):
+@limiter.limit("60/minute")
+def alerta_saldo(request: Request, threshold: int = 1000):
     """Verifica se o saldo está abaixo do threshold."""
     from djen.api.database import get_database
     db = get_database()
@@ -388,7 +415,8 @@ def alerta_saldo(threshold: int = Body(1000)):
             "message": f"Saldo baixo! Apenas {saldo} tokens restantes." if baixo else "Saldo OK",
         }
     except Exception as e:
-        return {"status": "error", "message": str(e)}
+        log.error("Erro ao verificar saldo: %s", e, exc_info=True)
+        return {"status": "error", "message": "Erro ao acessar banco de dados"}
 
 
 # =============================================================================
@@ -396,7 +424,8 @@ def alerta_saldo(threshold: int = Body(1000)):
 # =============================================================================
 
 @router.post("/processos/upload-csv", summary="Importar processos via CSV")
-def upload_csv_processos(processos: list = Body(..., description="Lista de {numero_processo, tribunal}")):
+@limiter.limit("5/minute")
+def upload_csv_processos(request: Request, processos: list = Body(..., description="Lista de {numero_processo, tribunal}")):
     """Importa múltiplos processos para monitoramento."""
     from djen.api.database import get_database
     db = get_database()

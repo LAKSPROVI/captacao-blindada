@@ -2,7 +2,7 @@
 # Captacao Peticao Blindada - Dockerfile Frontend
 # =============================================================================
 
-FROM node:18-alpine
+FROM node:20-alpine
 
 LABEL maintainer="CAPTAÇÃO BLINDADA"
 LABEL description="Frontend for Captacao Peticao Blindada"
@@ -13,8 +13,8 @@ WORKDIR /app
 # === Copy package files ===
 COPY frontend/package*.json /app/
 
-# === Install Dependencies ===
-RUN npm install
+# === Install Dependencies (reproducible) ===
+RUN npm ci
 
 # === Copy Application ===
 COPY frontend/ /app/
@@ -28,6 +28,13 @@ RUN npm run build
 
 # === Expose Port ===
 EXPOSE 3000
+
+# === Health Check ===
+HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=3 \
+    CMD wget --no-verbose --tries=1 --spider http://localhost:3000/ || exit 1
+
+# === Run as non-root ===
+USER node
 
 # === Start ===
 CMD ["npm", "start"]

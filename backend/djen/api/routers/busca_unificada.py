@@ -7,8 +7,10 @@ import time
 from typing import Optional
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
-from fastapi import APIRouter, Query, Body
+from fastapi import Request, APIRouter, Depends, Query, Body
 from pydantic import BaseModel
+from djen.api.auth import get_current_user, UserInDB
+from djen.api.ratelimit import limiter
 
 log = logging.getLogger("captacao.busca_unificada")
 router = APIRouter(prefix="/api/busca", tags=["Busca Unificada"])
@@ -24,7 +26,8 @@ class BuscaUnificadaRequest(BaseModel):
 
 
 @router.post("/simultanea", summary="Busca simultânea em múltiplas fontes")
-def busca_simultanea(req: BuscaUnificadaRequest):
+@limiter.limit("30/minute")
+def busca_simultanea(request: Request, req: BuscaUnificadaRequest):
     """
     Busca em DataJud e DJEN simultaneamente e faz merge dos resultados.
     Retorna resultados unificados com indicação da fonte.
@@ -116,7 +119,8 @@ def busca_simultanea(req: BuscaUnificadaRequest):
 
 
 @router.get("/status-fontes", summary="Status de todas as fontes")
-def status_fontes():
+@limiter.limit("60/minute")
+def status_fontes(request: Request):
     """Verifica status de todas as fontes de dados."""
     fontes = []
     

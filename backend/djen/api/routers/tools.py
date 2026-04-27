@@ -7,9 +7,11 @@ import re
 from datetime import date, timedelta, datetime
 from typing import Optional
 
-from fastapi import APIRouter, Query, Body
+from fastapi import Request, APIRouter, Depends, Query, Body
 
 from djen.api.database import Database
+from djen.api.auth import get_current_user, UserInDB
+from djen.api.ratelimit import limiter
 
 log = logging.getLogger("captacao.tools")
 router = APIRouter(prefix="/api/tools", tags=["Ferramentas"])
@@ -21,7 +23,8 @@ def get_db() -> Database:
 
 
 @router.post("/formatar-cnj", summary="Formatar número CNJ")
-def formatar_cnj(numero: str = Body(...)):
+@limiter.limit("30/minute")
+def formatar_cnj(request: Request, numero: str = Body(...)):
     """Formata número de processo para padrão CNJ."""
     numeros = re.sub(r"\D", "", numero)
     if len(numeros) == 20:
@@ -31,8 +34,8 @@ def formatar_cnj(numero: str = Body(...)):
 
 
 @router.post("/calcular-dias-uteis", summary="Calcular dias úteis entre datas")
-def calcular_dias_uteis(
-    data_inicio: str = Body(...),
+@limiter.limit("30/minute")
+def calcular_dias_uteis(request: Request, data_inicio: str = Body(...),
     data_fim: str = Body(...),
 ):
     """Calcula quantidade de dias úteis entre duas datas."""
@@ -60,7 +63,8 @@ def calcular_dias_uteis(
 
 
 @router.get("/estatisticas-gerais", summary="Estatísticas gerais do sistema")
-def estatisticas_gerais():
+@limiter.limit("60/minute")
+def estatisticas_gerais(request: Request):
     """Retorna estatísticas gerais consolidadas."""
     db = get_db()
     stats = {}
@@ -99,7 +103,8 @@ def estatisticas_gerais():
 
 
 @router.get("/uptime", summary="Uptime do sistema")
-def uptime():
+@limiter.limit("60/minute")
+def uptime(request: Request):
     """Retorna uptime e informações de runtime."""
     import os, platform, sys
     from djen.api.metrics import get_metrics
@@ -118,7 +123,8 @@ def uptime():
 
 
 @router.get("/indices-db", summary="Listar índices do banco")
-def listar_indices():
+@limiter.limit("60/minute")
+def listar_indices(request: Request):
     """Lista todos os índices do banco de dados."""
     db = get_db()
     rows = db.conn.execute("SELECT name, tbl_name FROM sqlite_master WHERE type='index' ORDER BY tbl_name").fetchall()
@@ -126,7 +132,8 @@ def listar_indices():
 
 
 @router.post("/vacuum", summary="Otimizar banco de dados")
-def vacuum_db():
+@limiter.limit("5/minute")
+def vacuum_db(request: Request):
     """Executa VACUUM no banco para otimizar espaço."""
     db = get_db()
     try:
@@ -140,4 +147,5 @@ def vacuum_db():
             "saved_mb": round((size_before - size_after) / 1024 / 1024, 2),
         }
     except Exception as e:
-        return {"status": "error", "message": str(e)}
+        log.error("Erro ao executar VACUUM: %s", e, exc_info=True)
+        return {"status": "error", "message": "Erro ao acessar banco de dados"}

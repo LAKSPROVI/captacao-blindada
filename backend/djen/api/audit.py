@@ -1,6 +1,7 @@
 import logging
 import hashlib
 import json
+import sys
 import traceback
 from typing import Optional, Any
 from djen.api.database import get_database
@@ -25,25 +26,31 @@ def registrar_auditoria(
     try:
         db = get_database()
         
-        # Obter o ultimo hash. Se master/seed (toda a db) entao um default.
-        last_log = db.conn.execute("SELECT data_hash FROM audit_logs ORDER BY id DESC LIMIT 1").fetchone()
-        previous_hash = last_log["data_hash"] if last_log else "0000000000000000000000000000000000000000000000000000000000000000"
+        # Limitar tamanho do details para evitar payloads enormes
+        details_str = json.dumps(details, ensure_ascii=False)[:10000] if details else ""
         
-        details_str = json.dumps(details, ensure_ascii=False) if details else ""
-        
-        # Montar a string canonica de payload
-        payload_str = f"{action}:{entity_type}:{entity_id}:{tenant_id}:{user_id}:{details_str}"
-        new_hash = _hash_data(previous_hash, payload_str)
-        
-        db.conn.execute(
-            """INSERT INTO audit_logs 
-               (tenant_id, user_id, action, entity_type, entity_id, details, ip_address, data_hash) 
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
-            (tenant_id, user_id, action, entity_type, entity_id, details_str, ip_address, new_hash)
-        )
-        db.conn.commit()
+        # Transação exclusiva para garantir integridade da cadeia de hash
+        db.conn.execute("BEGIN EXCLUSIVE")
+        try:
+            last_log = db.conn.execute("SELECT data_hash FROM audit_logs ORDER BY id DESC LIMIT 1").fetchone()
+            previous_hash = last_log["data_hash"] if last_log else "0000000000000000000000000000000000000000000000000000000000000000"
+            
+            payload_str = f"{action}:{entity_type}:{entity_id}:{tenant_id}:{user_id}:{details_str}"
+            new_hash = _hash_data(previous_hash, payload_str)
+            
+            db.conn.execute(
+                """INSERT INTO audit_logs 
+                   (tenant_id, user_id, action, entity_type, entity_id, details, ip_address, data_hash) 
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
+                (tenant_id, user_id, action, entity_type, entity_id, details_str, ip_address, new_hash)
+            )
+            db.conn.commit()
+        except Exception:
+            db.conn.rollback()
+            raise
     except Exception as e:
         log.error("Erro critico ao registrar log de auditoria: %s", e)
+        print(f"[AUDIT CRITICAL] Falha ao registrar auditoria: {e}", file=sys.stderr)
 
 def registrar_erro_sistema(
     function_name: str,

@@ -6,10 +6,12 @@ import logging
 from datetime import date, datetime, timedelta
 from typing import Optional
 
-from fastapi import APIRouter, HTTPException, Query, Body
+from fastapi import Request, APIRouter, Depends, HTTPException, Query, Body
 from pydantic import BaseModel
 
 from djen.api.database import Database
+from djen.api.auth import get_current_user, UserInDB
+from djen.api.ratelimit import limiter
 
 log = logging.getLogger("captacao.agenda")
 router = APIRouter(prefix="/api/agenda", tags=["Agenda"])
@@ -18,28 +20,6 @@ router = APIRouter(prefix="/api/agenda", tags=["Agenda"])
 def get_db() -> Database:
     from djen.api.database import get_database
     return get_database()
-
-
-def _ensure_table(db):
-    try:
-        db.conn.execute("""
-            CREATE TABLE IF NOT EXISTS agenda (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                titulo TEXT NOT NULL,
-                descricao TEXT,
-                tipo TEXT DEFAULT 'compromisso',
-                numero_processo TEXT,
-                data_evento TEXT NOT NULL,
-                hora_evento TEXT,
-                local TEXT,
-                status TEXT DEFAULT 'pendente',
-                lembrete_dias INTEGER DEFAULT 1,
-                criado_em TEXT DEFAULT (datetime('now', 'localtime'))
-            )
-        """)
-        db.conn.commit()
-    except Exception:
-        pass
 
 
 class AgendaRequest(BaseModel):
@@ -54,9 +34,10 @@ class AgendaRequest(BaseModel):
 
 
 @router.post("/criar", summary="Criar compromisso")
-def criar_compromisso(req: AgendaRequest):
+@limiter.limit("30/minute")
+def criar_compromisso(request: Request, req: AgendaRequest):
     db = get_db()
-    _ensure_table(db)
+
     cur = db.conn.execute(
         """INSERT INTO agenda (titulo, descricao, tipo, numero_processo, data_evento, hora_evento, local, lembrete_dias)
            VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
@@ -67,12 +48,12 @@ def criar_compromisso(req: AgendaRequest):
 
 
 @router.get("/listar", summary="Listar compromissos")
-def listar_compromissos(
-    status: str = Query("pendente", description="pendente, concluido, todos"),
+@limiter.limit("60/minute")
+def listar_compromissos(request: Request, status: str = Query("pendente", description="pendente, concluido, todos"),
     limite: int = Query(100, ge=1, le=500),
 ):
     db = get_db()
-    _ensure_table(db)
+
     if status == "todos":
         rows = db.conn.execute("SELECT * FROM agenda ORDER BY data_evento ASC LIMIT ?", (limite,)).fetchall()
     else:
@@ -94,9 +75,10 @@ def listar_compromissos(
 
 
 @router.get("/proximos", summary="Próximos compromissos")
-def proximos_compromissos(dias: int = Query(7, ge=1, le=60)):
+@limiter.limit("60/minute")
+def proximos_compromissos(request: Request, dias: int = Query(7, ge=1, le=60)):
     db = get_db()
-    _ensure_table(db)
+
     hoje = date.today().isoformat()
     limite_data = (date.today() + timedelta(days=dias)).isoformat()
     rows = db.conn.execute(
@@ -114,9 +96,10 @@ def proximos_compromissos(dias: int = Query(7, ge=1, le=60)):
 
 
 @router.get("/hoje", summary="Compromissos de hoje")
-def compromissos_hoje():
+@limiter.limit("60/minute")
+def compromissos_hoje(request: Request):
     db = get_db()
-    _ensure_table(db)
+
     hoje = date.today().isoformat()
     rows = db.conn.execute(
         "SELECT * FROM agenda WHERE data_evento = ? ORDER BY hora_evento ASC", (hoje,)
@@ -125,18 +108,20 @@ def compromissos_hoje():
 
 
 @router.put("/{compromisso_id}/concluir", summary="Concluir compromisso")
-def concluir_compromisso(compromisso_id: int):
+@limiter.limit("30/minute")
+def concluir_compromisso(request: Request, compromisso_id: int):
     db = get_db()
-    _ensure_table(db)
+
     db.conn.execute("UPDATE agenda SET status = 'concluido' WHERE id = ?", (compromisso_id,))
     db.conn.commit()
     return {"status": "success"}
 
 
 @router.delete("/{compromisso_id}", summary="Remover compromisso")
-def remover_compromisso(compromisso_id: int):
+@limiter.limit("30/minute")
+def remover_compromisso(request: Request, compromisso_id: int):
     db = get_db()
-    _ensure_table(db)
+
     db.conn.execute("DELETE FROM agenda WHERE id = ?", (compromisso_id,))
     db.conn.commit()
     return {"status": "success"}

@@ -2,22 +2,26 @@
 Router de Notificações - CAPTAÇÃO BLINDADA.
 """
 import logging
-from fastapi import APIRouter, Body
+from fastapi import Request, APIRouter, Depends, Body
 from djen.api.notifications import get_notification_manager
+from djen.api.auth import get_current_user, UserInDB
+from djen.api.ratelimit import limiter
 
 log = logging.getLogger("captacao.notifications")
 router = APIRouter(prefix="/api/notifications", tags=["Notificacoes"])
 
 
 @router.get("/status", summary="Status das notificações")
-def notification_status():
+@limiter.limit("60/minute")
+def notification_status(request: Request, current_user: UserInDB = Depends(get_current_user)):
     """Retorna status dos canais de notificação."""
     manager = get_notification_manager()
     return {"status": "success", **manager.get_status()}
 
 
 @router.post("/test/email", summary="Testar email")
-def test_email(to: str = Body(...), subject: str = Body("Teste Captação Blindada")):
+@limiter.limit("5/minute")
+def test_email(request: Request, to: str = Body(...), subject: str = Body("Teste Captação Blindada"), current_user: UserInDB = Depends(get_current_user)):
     """Envia email de teste."""
     manager = get_notification_manager()
     if not manager.email.enabled:
@@ -27,7 +31,8 @@ def test_email(to: str = Body(...), subject: str = Body("Teste Captação Blinda
 
 
 @router.post("/test/whatsapp", summary="Testar WhatsApp")
-def test_whatsapp(to: str = Body(...)):
+@limiter.limit("5/minute")
+def test_whatsapp(request: Request, to: str = Body(...), current_user: UserInDB = Depends(get_current_user)):
     """Envia mensagem WhatsApp de teste."""
     manager = get_notification_manager()
     if not manager.whatsapp.enabled:

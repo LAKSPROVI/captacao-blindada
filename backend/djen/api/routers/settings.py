@@ -5,8 +5,10 @@ Permite configurar intervalos de scheduler e outros parametros globais.
 
 import logging
 from typing import Dict, Any
-from fastapi import APIRouter, HTTPException, Body
+from fastapi import Request, APIRouter, Depends, HTTPException, Body
 from djen.api.database import Database
+from djen.api.auth import get_current_user, require_role, UserInDB
+from djen.api.ratelimit import limiter
 
 log = logging.getLogger("captacao.settings")
 router = APIRouter(prefix="/api/settings", tags=["Configuracoes"])
@@ -18,13 +20,15 @@ def get_db() -> Database:
 
 
 @router.get("", summary="Listar todas as configuracoes")
-def listar_settings():
+@limiter.limit("60/minute")
+def listar_settings(request: Request, current_user: UserInDB = Depends(require_role("master"))):
     db = get_db()
     return db.listar_settings()
 
 
 @router.post("", summary="Atualizar uma configuracao")
-def atualizar_setting(payload: Dict[str, Any] = Body(...)):
+@limiter.limit("30/minute")
+def atualizar_setting(request: Request, payload: Dict[str, Any] = Body(...), current_user: UserInDB = Depends(require_role("master"))):
     """
     Atualiza uma configuracao global.
     Ex: {"key": "datajud_update_interval_hours", "value": "12"}

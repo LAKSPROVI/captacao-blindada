@@ -127,8 +127,9 @@ class CNJValidator:
     )
     
     # Versão simples (sem pontos)
+    # Formato sem pontuação: 7+2+4+1+2+4 = 20 dígitos com estrutura validada
     CNJ_PATTERN_SIMPLE = re.compile(
-        r"^\d{7}\d{2}\d{4}\d\d{2}\d{4}$"
+        r"^(\d{7})(\d{2})(\d{4})(\d{1})(\d{2})(\d{4})$"
     )
     
     @classmethod
@@ -186,7 +187,13 @@ class OABValidator:
     Exemplo: SP123456A
     """
     
-    OAB_PATTERN = re.compile(r"^[A-Z]{2}\d{6}[A-Z]?$")
+    OAB_PATTERN = re.compile(r"^[A-Z]{2}\d{3,7}[A-Z]?$")
+    
+    VALID_UFS = {
+        "AC", "AL", "AM", "AP", "BA", "CE", "DF", "ES", "GO", "MA",
+        "MG", "MS", "MT", "PA", "PB", "PE", "PI", "PR", "RJ", "RN",
+        "RO", "RR", "RS", "SC", "SE", "SP", "TO",
+    }
     
     @classmethod
     def validate(cls, numero: str, uf: Optional[str] = None) -> ValidationResult:
@@ -202,6 +209,14 @@ class OABValidator:
         numero = numero.strip().upper()
         
         if cls.OAB_PATTERN.match(numero):
+            uf_part = numero[:2]
+            if uf_part not in cls.VALID_UFS:
+                return ValidationResult(
+                    valid=False,
+                    field="numero_oab",
+                    message=f"UF '{uf_part}' invalida. Use uma UF brasileira valida.",
+                    value=numero
+                )
             return ValidationResult(
                 valid=True,
                 field="numero_oab",
@@ -264,11 +279,12 @@ class TribunalValidator:
                 message=info["nome"]
             )
         
-        #Suggestions próximas
+        # Sugestoes proximas
         suggestions = []
-        for t in TRIBUNAIS_CNJ.keys():
-            if t.startswith(tribunal_lower[:2]):
-                suggestions.append(t)
+        if len(tribunal_lower) >= 2:
+            for t in TRIBUNAIS_CNJ.keys():
+                if t.startswith(tribunal_lower[:3]):
+                    suggestions.append(t)
         
         msg = f"Tribunal '{tribunal}' não encontrado"
         if suggestions:
@@ -315,4 +331,4 @@ def get_tribunais(tipo: Optional[str] = None) -> list:
     ]
 
 
-log.info("Validadores configurados: CNJ, OAB, Tribuais")
+log.debug("Validadores configurados: CNJ, OAB, Tribunais")

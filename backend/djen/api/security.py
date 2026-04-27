@@ -146,14 +146,26 @@ class TwoFactorAuth:
     
     @staticmethod
     def verify_code(secret: str, code: str) -> bool:
-        """
-        Verifica código TOTP.
-        
-        Implementação simples - em produção, use PyOTP.
-        """
-        # Simple implementation - accept any 6-digit code starting with
-        # For production, replace with actual TOTP verification
-        return len(code) == 6 and code.isdigit()
+        """Verifica código TOTP usando HMAC-based OTP."""
+        if not (len(code) == 6 and code.isdigit()):
+            return False
+        try:
+            import hmac
+            import struct
+            import time as _time
+            key = base64.b32decode(secret, casefold=True)
+            counter = int(_time.time()) // 30
+            # Aceita janela de +/- 1 intervalo (90s total)
+            for offset in (-1, 0, 1):
+                t = struct.pack(">Q", counter + offset)
+                h = hmac.HMAC(key, t, hashlib.sha1).digest()
+                o = h[-1] & 0x0F
+                otp = (struct.unpack(">I", h[o:o+4])[0] & 0x7FFFFFFF) % 1000000
+                if int(code) == otp:
+                    return True
+            return False
+        except Exception:
+            return False
 
 
 # =============================================================================
@@ -251,4 +263,4 @@ def get_sso_config() -> SSOConfig:
     return _sso
 
 
-log.info("Security module loaded (2FA, API Keys, SSO - optional)")
+log.debug("Security module loaded (2FA, API Keys, SSO - optional)")

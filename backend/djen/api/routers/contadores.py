@@ -5,9 +5,11 @@ Contadores em tempo real para sidebar e widgets.
 import logging
 from datetime import date
 
-from fastapi import APIRouter
+from fastapi import Request, APIRouter, Depends
 
 from djen.api.database import Database
+from djen.api.auth import get_current_user, UserInDB
+from djen.api.ratelimit import limiter
 
 log = logging.getLogger("captacao.contadores")
 router = APIRouter(prefix="/api/contadores", tags=["Contadores"])
@@ -19,7 +21,8 @@ def get_db() -> Database:
 
 
 @router.get("", summary="Contadores em tempo real")
-def contadores():
+@limiter.limit("60/minute")
+def contadores(request: Request, current_user: UserInDB = Depends(get_current_user)):
     """Retorna contadores para sidebar e widgets."""
     db = get_db()
     hoje = date.today().isoformat()

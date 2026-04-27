@@ -6,9 +6,11 @@ Endpoints para validação de campos e listagem de tribunais.
 import logging
 from typing import Optional
 
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import Request, APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
+from djen.api.auth import get_current_user, UserInDB
 
+from djen.api.ratelimit import limiter
 from djen.api.validation import (
     validate_cnj,
     validate_oab,
@@ -28,8 +30,8 @@ router = APIRouter(prefix="/api/validation", tags=["Validacao"])
 # =============================================================================
 
 @router.get("/tribunais", summary="Listar tribunais disponíveis")
-def listar_tribunais(
-    tipo: Optional[str] = Query(None, description="Filtrar por tipo: federal, estadual, trabalho, superior"),
+@limiter.limit("60/minute")
+def listar_tribunais(request: Request, tipo: Optional[str] = Query(None, description="Filtrar por tipo: federal, estadual, trabalho, superior"),
 ):
     """
     Retorna lista de tribunais disponíveis para consulta.
@@ -45,7 +47,8 @@ def listar_tribunais(
 
 
 @router.get("/tribunais/{sigla}", summary="Verificar tribunal")
-def verificar_tribunal(sigla: str):
+@limiter.limit("60/minute")
+def verificar_tribunal(request: Request, sigla: str):
     """Verifica se um tribunal existe."""
     result = validate_tribunal(sigla)
     
@@ -72,7 +75,8 @@ def verificar_tribunal(sigla: str):
 # =============================================================================
 
 @router.post("/cnj", summary="Validar número de processo CNJ")
-def validar_cnj(numero_processo: str = Query(..., description="Número do processo CNJ")):
+@limiter.limit("30/minute")
+def validar_cnj(request: Request, numero_processo: str = Query(..., description="Número do processo CNJ")):
     """
     Valida formato de número de processo CNJ.
     
@@ -85,8 +89,8 @@ def validar_cnj(numero_processo: str = Query(..., description="Número do proces
 
 
 @router.post("/oab", summary="Validar número de OAB")
-def validar_oab(
-    numero_oab: str = Query(..., description="Número da OAB"),
+@limiter.limit("30/minute")
+def validar_oab(request: Request, numero_oab: str = Query(..., description="Número da OAB"),
     uf: Optional[str] = Query(None, description="UF da OAB (opcional)"),
 ):
     """
@@ -118,6 +122,7 @@ from pydantic import BaseModel
 
 
 @router.post("/validar-tudo", summary="Validar múltiplos campos")
+@limiter.limit("30/minute")
 def validar_tudo(request: ValidateAllRequest):
     """
     Valida múltiplos campos de uma vez.
