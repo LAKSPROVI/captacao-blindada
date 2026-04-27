@@ -13,8 +13,8 @@ WORKDIR /app
 # === Copy package files ===
 COPY frontend/package*.json /app/
 
-# === Install Dependencies (reproducible) ===
-RUN npm ci
+# === Install Dependencies ===
+RUN npm install --legacy-peer-deps
 
 # === Copy Application ===
 COPY frontend/ /app/
