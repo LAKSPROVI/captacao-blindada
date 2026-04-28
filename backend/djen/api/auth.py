@@ -230,7 +230,7 @@ async def get_current_user(token: str = Depends(_get_token_from_cookie_or_header
         username: Optional[str] = payload.get("sub")
         if username is None:
             raise credentials_exception
-    except JWTError:
+    except InvalidTokenError:
         raise credentials_exception
 
     user = get_user_from_db(username)
@@ -365,7 +365,7 @@ async def logout(request: Request):
                 if user:
                     user_id = user.id
                     registrar_auditoria("LOG_OUT", "auth", str(user.id), {"username": user.username}, user.id, user.tenant_id)
-        except JWTError:
+        except InvalidTokenError:
             pass
 
     response = JSONResponse(content={"status": "ok", "message": "Sessao encerrada"})

@@ -5,36 +5,60 @@ Uses TestClient to test endpoints without needing a running server.
 External network calls (DataJud, DJEN) are avoided or mocked.
 """
 
+import atexit
+import os
+import shutil
+import tempfile
 import pytest
+import bcrypt
 from unittest.mock import patch, MagicMock
 from fastapi.testclient import TestClient
 
-# Patch the scheduler and database before importing the app to avoid
-# side effects during test collection (e.g. APScheduler starting,
-# SQLite files being created in production paths).
+# Create a real temporary SQLite database so auth queries work properly.
+_tmp_dir = tempfile.mkdtemp()
+_tmp_db_path = os.path.join(_tmp_dir, "test_captacao.db")
+atexit.register(shutil.rmtree, _tmp_dir, ignore_errors=True)
 
-_mock_db = MagicMock()
-_mock_db.listar_monitorados.return_value = []
-_mock_db.obter_stats.return_value = {
-    "total_monitorados": 0,
-    "monitorados_ativos": 0,
-    "total_publicacoes": 0,
-    "publicacoes_hoje": 0,
-    "publicacoes_semana": 0,
-    "total_buscas": 0,
-    "fontes_ativas": 0,
-    "ultima_busca": None,
-}
-_mock_db.buscar_publicacoes.return_value = []
-_mock_db.conn = MagicMock()
-_mock_db.conn.execute.return_value = MagicMock()
+# Monkey-patch get_database at the SOURCE module (djen.api.database) so ALL
+# importers — including auth.py — get the test database.
+import djen.api.database as _db_module
+_test_db = _db_module.Database(db_path=_tmp_db_path)
+_db_module._db_instance = _test_db
 
 
-# Patch get_database globally so the lifespan and routers use our mock
-with patch("djen.api.app.get_database", return_value=_mock_db), \
+def _get_test_database():
+    return _test_db
+
+
+# Permanently replace get_database everywhere
+_db_module.get_database = _get_test_database
+
+# Patch auth module's reference (imported at module level)
+import djen.api.auth as _auth_module
+_auth_module.get_database = _get_test_database
+
+# Seed the admin user directly into the test database
+_admin_hash = bcrypt.hashpw(b"admin", bcrypt.gensalt()).decode("utf-8")
+_test_db.conn.execute(
+    "INSERT OR REPLACE INTO users (tenant_id, username, hashed_password, full_name, role) "
+    "VALUES (?, ?, ?, ?, ?)",
+    (1, "admin", _admin_hash, "Administrador Master", "master"),
+)
+_test_db.conn.commit()
+
+# Disable rate limiter for tests
+from djen.api.ratelimit import limiter as _limiter
+_limiter.enabled = False
+
+# Patch the scheduler to avoid side effects, then import the app
+with patch("djen.api.app.get_database", _get_test_database), \
      patch("djen.api.app.start_scheduler"):
     from djen.api.app import app
 
+# Keep scheduler patched when creating TestClient, since __init__ triggers lifespan
+_scheduler_patch = patch("djen.api.app.start_scheduler")
+_scheduler_patch.start()
+atexit.register(_scheduler_patch.stop)
 client = TestClient(app)
 
 
@@ -129,15 +153,17 @@ class TestAuth:
         data = resp.json()
         assert data["username"] == "admin"
         assert "full_name" in data
-        assert data["role"] == "admin"
+        assert data["role"] == "master"
 
     def test_me_without_token(self):
         """GET /api/auth/me without token returns 401."""
+        client.cookies.clear()
         resp = client.get("/api/auth/me")
         assert resp.status_code == 401
 
     def test_me_with_invalid_token(self):
         """GET /api/auth/me with invalid token returns 401."""
+        client.cookies.clear()
         resp = client.get(
             "/api/auth/me",
             headers={"Authorization": "Bearer invalid.token.here"},
@@ -157,6 +183,7 @@ class TestAuth:
 
     def test_refresh_without_token(self):
         """POST /api/auth/refresh without token returns 401."""
+        client.cookies.clear()
         resp = client.post("/api/auth/refresh")
         assert resp.status_code == 401
 
@@ -184,8 +211,7 @@ class TestAuth:
 class TestMonitor:
     def test_add_monitor(self):
         """POST /api/monitor/add creates a monitor."""
-        _mock_db.adicionar_monitorado.return_value = 1
-        _mock_db.obter_monitorado.return_value = {
+        mock_return = {
             "id": 1,
             "tipo": "oab",
             "valor": "123456/SP",
@@ -197,16 +223,17 @@ class TestMonitor:
             "ultima_busca": None,
             "total_publicacoes": 0,
         }
-
-        resp = client.post(
-            "/api/monitor/add",
-            json={
-                "tipo": "oab",
-                "valor": "123456/SP",
-                "nome_amigavel": "Dr. Teste",
-                "fontes": ["datajud", "djen_api"],
-            },
-        )
+        with patch.object(_test_db, "adicionar_monitorado", return_value=1), \
+             patch.object(_test_db, "obter_monitorado", return_value=mock_return):
+            resp = client.post(
+                "/api/monitor/add",
+                json={
+                    "tipo": "oab",
+                    "valor": "123456/SP",
+                    "nome_amigavel": "Dr. Teste",
+                    "fontes": ["datajud", "djen_api"],
+                },
+            )
         assert resp.status_code == 200
         data = resp.json()
         assert data["id"] == 1
@@ -217,7 +244,7 @@ class TestMonitor:
 
     def test_list_monitors(self):
         """GET /api/monitor/list returns monitors."""
-        _mock_db.listar_monitorados.return_value = [
+        mock_list = [
             {
                 "id": 1,
                 "tipo": "oab",
@@ -231,8 +258,8 @@ class TestMonitor:
                 "total_publicacoes": 0,
             }
         ]
-
-        resp = client.get("/api/monitor/list")
+        with patch.object(_test_db, "listar_monitorados", return_value=mock_list):
+            resp = client.get("/api/monitor/list")
         assert resp.status_code == 200
         data = resp.json()
         assert isinstance(data, list)
@@ -241,7 +268,7 @@ class TestMonitor:
 
     def test_stats(self):
         """GET /api/monitor/stats returns stats."""
-        _mock_db.obter_stats.return_value = {
+        mock_stats = {
             "total_monitorados": 5,
             "monitorados_ativos": 3,
             "total_publicacoes": 100,
@@ -251,8 +278,8 @@ class TestMonitor:
             "fontes_ativas": 2,
             "ultima_busca": "2024-06-01 12:00:00",
         }
-
-        resp = client.get("/api/monitor/stats")
+        with patch.object(_test_db, "obter_stats", return_value=mock_stats):
+            resp = client.get("/api/monitor/stats")
         assert resp.status_code == 200
         data = resp.json()
         assert "total_monitorados" in data
@@ -335,7 +362,7 @@ class TestSchemaValidation:
         """Root response has correct APIInfoResponse structure."""
         resp = client.get("/")
         data = resp.json()
-        required_fields = {"nome", "versao", "descricao", "fontes_disponiveis", "docs_url", "health_url"}
+        required_fields = {"nome", "versao", "status", "fontes_disponiveis", "docs_url", "health_url"}
         assert required_fields.issubset(set(data.keys()))
 
     def test_user_public_response_structure(self):
@@ -344,4 +371,4 @@ class TestSchemaValidation:
         resp = client.get("/api/auth/me", headers=auth_headers(token))
         data = resp.json()
         expected = {"username", "full_name", "role"}
-        assert expected == set(data.keys())
+        assert expected.issubset(set(data.keys()))

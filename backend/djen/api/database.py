@@ -80,8 +80,10 @@ class Database:
                 partes TEXT,
                 notificado INTEGER DEFAULT 0,
                 monitorado_id INTEGER,
+                captacao_id INTEGER,
                 criado_em TEXT DEFAULT (datetime('now', 'localtime')),
-                FOREIGN KEY (monitorado_id) REFERENCES monitorados(id)
+                FOREIGN KEY (monitorado_id) REFERENCES monitorados(id),
+                FOREIGN KEY (captacao_id) REFERENCES captacoes(id)
             );
 
             CREATE TABLE IF NOT EXISTS buscas (
@@ -200,7 +202,6 @@ class Database:
             CREATE INDEX IF NOT EXISTS idx_publicacoes_data ON publicacoes(data_publicacao);
             CREATE INDEX IF NOT EXISTS idx_publicacoes_hash ON publicacoes(hash);
             CREATE INDEX IF NOT EXISTS idx_publicacoes_monitorado ON publicacoes(monitorado_id);
-            CREATE INDEX IF NOT EXISTS idx_publicacoes_captacao ON publicacoes(captacao_id);
             CREATE INDEX IF NOT EXISTS idx_publicacoes_criado ON publicacoes(criado_em);
             CREATE INDEX IF NOT EXISTS idx_monitorados_ativo ON monitorados(ativo);
             CREATE INDEX IF NOT EXISTS idx_buscas_fonte ON buscas(fonte);
@@ -539,6 +540,12 @@ class Database:
         # --- Migration: adicionar captacao_id na tabela publicacoes ---
         try:
             conn.execute("ALTER TABLE publicacoes ADD COLUMN captacao_id INTEGER")
+        except Exception:
+            pass
+        # Create index for captacao_id (after migration ensures column exists)
+        try:
+            conn.execute("CREATE INDEX IF NOT EXISTS idx_publicacoes_captacao ON publicacoes(captacao_id)")
+            conn.commit()
         except Exception:
             pass
 

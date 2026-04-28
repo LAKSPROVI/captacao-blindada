@@ -568,8 +568,15 @@ app.include_router(final_batch_router)
 
 @app.get("/", tags=["Info"])
 def root():
-    """Health check da API."""
-    return {"status": "ok", "service": "captacao-blindada"}
+    """Informacoes gerais da API."""
+    return {
+        "nome": "Captacao Peticao Blindada",
+        "versao": "1.0.0",
+        "status": "ok",
+        "fontes_disponiveis": ["datajud", "djen"],
+        "docs_url": "/docs",
+        "health_url": "/api/health",
+    }
 
 
 @app.post("/api/buscar/unificada", tags=["Busca Unificada"], summary="Busca em multiplas fontes")

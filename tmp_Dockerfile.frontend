@@ -1,0 +1,40 @@
+# =============================================================================
+# Captacao Peticao Blindada - Dockerfile Frontend (Hardened)
+# =============================================================================
+
+FROM node:20-alpine
+
+LABEL maintainer="CAPTACAO BLINDADA"
+LABEL description="Frontend for Captacao Peticao Blindada"
+
+# === Create non-root user ===
+RUN addgroup -g 1001 -S appgroup && adduser -S appuser -u 1001 -G appgroup
+
+# === Configuracao ===
+WORKDIR /app
+
+# === Copy package files ===
+COPY frontend/package*.json /app/
+
+# === Install Dependencies ===
+RUN npm install && npm cache clean --force
+
+# === Copy Application ===
+COPY frontend/ /app/
+
+# === Environment ===
+ENV NEXT_PUBLIC_API_URL=http://backend:8000
+ENV NODE_ENV=production
+
+# === Build ===
+RUN npm run build
+
+# === Set ownership and switch to non-root ===
+RUN chown -R appuser:appgroup /app
+USER appuser
+
+# === Expose Port ===
+EXPOSE 3000
+
+# === Start ===
+CMD ["npm", "start"]
