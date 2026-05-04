@@ -23,7 +23,7 @@ urllib3==2.0.0
 # SQLite built-in (nao precisa de pacote extra)
 
 # --- Criptografia ---
-cryptography>=41.0.0
+cryptography==44.0.0
 
 # --- Scheduler ---
 apscheduler==3.10.0

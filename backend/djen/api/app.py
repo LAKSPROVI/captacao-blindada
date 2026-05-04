@@ -255,7 +255,7 @@ def reschedule_datajud_job(hours: int):
 async def lifespan(app: FastAPI):
     """Startup e shutdown da aplicacao."""
     log.info("=" * 60)
-    log.info("  CAPTACAO PETICAO BLINDADA v1.0.0")
+    log.info("  CAPTACAO PETICAO BLINDADA v3.0.0")
     log.info("  Monitoramento de Publicacoes Judiciais")
     log.info("=" * 60)
 
@@ -307,7 +307,7 @@ app = FastAPI(
         "Projetado para funcionar como microservice dentro do CAPTAÇÃO BLINDADA, "
         "acessivel pelo OpenClaw Gateway via HTTP."
     ),
-    version="1.0.0",
+    version="3.0.0",
     docs_url="/docs",
     redoc_url="/redoc",
     lifespan=lifespan,
@@ -571,7 +571,7 @@ def root():
     """Informacoes gerais da API."""
     return {
         "nome": "Captacao Peticao Blindada",
-        "versao": "1.0.0",
+        "versao": "3.0.0",
         "status": "ok",
         "fontes_disponiveis": ["datajud", "djen"],
         "docs_url": "/docs",

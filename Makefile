@@ -15,10 +15,10 @@ dev: ## Inicia backend em modo desenvolvimento
 	cd backend && python -m uvicorn djen.api.app:app --host 0.0.0.0 --port 8000 --reload
 
 test: ## Roda testes do backend
-	cd backend && python -m pytest tests/ -v --tb=short
+	cd backend && python -m pytest djen/tests/ -v --tb=short
 
 test-cov: ## Roda testes com cobertura
-	cd backend && python -m pytest tests/ -v --cov=djen --cov-report=html
+	cd backend && python -m pytest djen/tests/ -v --cov=djen --cov-report=html
 
 lint: ## Verifica estilo do codigo
 	cd backend && python -m ruff check djen/
